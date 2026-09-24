@@ -225,6 +225,7 @@ __marimo__/
 
 # Testing
 *__test*
+tests/.scratch/
 
 # macOS
 .DS_Store
