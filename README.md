@@ -57,6 +57,11 @@ No credentials needed:
 ipasign.Key(adhoc=True).sign("input.ipa", "output.ipa")
 ```
 
+## Changelog
+
+Release notes are available in
+[CHANGELOG.md](https://github.com/Senophyx/ipasign/blob/main/CHANGELOG.md).
+
 ## License
 ```
 This Project under MIT License
