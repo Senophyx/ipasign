@@ -30,6 +30,11 @@ dependencies = [
     "cryptography>=50.0.1",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Senophyx/ipasign"
+Repository = "https://github.com/Senophyx/ipasign"
+"Issue tracker" = "https://github.com/Senophyx/ipasign/issues"
+
 [tool.setuptools]
 include-package-data = true
 
