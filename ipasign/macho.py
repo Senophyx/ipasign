@@ -225,27 +225,30 @@ def _parse_slice(data: bytes, base: int, size: int) -> Slice:
         flags=fields[6],
     )
 
-    offset = base + _HEADER_SIZE[is_64]
+    # Parsing walks absolute file offsets; everything stored on the dataclasses is
+    # relative to the slice base, because the writers rebuild a slice-only buffer.
+    cursor = base + _HEADER_SIZE[is_64]
     for _ in range(slc.ncmds):
-        if offset + 8 > base + size:
+        if cursor + 8 > base + size:
             raise MachOError("load command runs past the end of the slice")
-        cmd, cmdsize = struct.unpack_from(endian + "II", data, offset)
-        if cmdsize < 8 or offset + cmdsize > base + size:
+        cmd, cmdsize = struct.unpack_from(endian + "II", data, cursor)
+        if cmdsize < 8 or cursor + cmdsize > base + size:
             raise MachOError(f"bad load command size {cmdsize} for cmd 0x{cmd:x}")
 
+        offset = cursor - base
         if cmd in (LC_SEGMENT, LC_SEGMENT_64):
-            slc.segments.append(_parse_segment(data, offset, cmd == LC_SEGMENT_64, endian))
+            slc.segments.append(_parse_segment(data, cursor, offset, cmd == LC_SEGMENT_64, endian))
         elif cmd == LC_CODE_SIGNATURE:
-            dataoff, datasize = struct.unpack_from(endian + "II", data, offset + 8)
+            dataoff, datasize = struct.unpack_from(endian + "II", data, cursor + 8)
             slc.code_signature = LoadCommand(cmd, cmdsize, offset, (dataoff, datasize))
         elif cmd in (LC_ENCRYPTION_INFO, LC_ENCRYPTION_INFO_64):
-            cryptid = struct.unpack_from(endian + "I", data, offset + 16)[0]
+            cryptid = struct.unpack_from(endian + "I", data, cursor + 16)[0]
             slc.encrypted = cryptid >= 1
             slc.commands.append(LoadCommand(cmd, cmdsize, offset))
         else:
             slc.commands.append(LoadCommand(cmd, cmdsize, offset))
 
-        offset += cmdsize
+        cursor += cmdsize
 
     text = slc.text_segment
     if text is not None:
@@ -256,15 +259,15 @@ def _parse_slice(data: bytes, base: int, size: int) -> Slice:
     return slc
 
 
-def _parse_segment(data: bytes, offset: int, is_64: bool, endian: str) -> Segment:
-    fields = struct.unpack_from(endian + _SEGMENT[is_64], data, offset + 8)
+def _parse_segment(data: bytes, cursor: int, offset: int, is_64: bool, endian: str) -> Segment:
+    fields = struct.unpack_from(endian + _SEGMENT[is_64], data, cursor + 8)
     name = _cstr(fields[0])
     vmaddr, vmsize, fileoff, filesize = fields[1:5]
     maxprot, initprot, nsects, flags = fields[5:9]
-    command_size = struct.unpack_from(endian + "I", data, offset + 4)[0]
+    command_size = struct.unpack_from(endian + "I", data, cursor + 4)[0]
 
     sections: list[Section] = []
-    sect_off = offset + _SEGMENT_SIZE[is_64]
+    sect_off = cursor + _SEGMENT_SIZE[is_64]
     for _ in range(nsects):
         raw = struct.unpack_from(endian + _SECTION[is_64], data, sect_off)
         sections.append(
@@ -374,23 +377,41 @@ def signature_region_size(code_length: int) -> int:
     return align_up(((code_length // SIGNATURE_ALIGN) + 1) * (20 + 32), SIGNATURE_ALIGN) + 32768
 
 
-def build_slice(slc: Slice, code_length: int, new_length: int, signature: bytes) -> bytes:
-    """Return the slice bytes with ``signature`` written at ``code_length``.
+def grow_slice(slc: Slice, new_length: int) -> bytes:
+    """Return the slice resized to ``new_length`` with room for a signature.
 
-    The result is exactly ``new_length`` bytes: the original content, zero
-    padding when the file grows, and the signature in place. ``__LINKEDIT`` and
-    ``LC_CODE_SIGNATURE`` are updated when the file grows.
+    The signature region itself is left as zero padding; call
+    :func:`place_signature` once the blob is built. ``__LINKEDIT`` and
+    ``LC_CODE_SIGNATURE`` are brought up to date here.
     """
+    if new_length < slc.size:
+        raise MachOError("cannot shrink a slice to make room for a signature")
+
     out = bytearray(slc.view)
-    if len(out) < new_length:
-        out.extend(b"\0" * (new_length - len(out)))
-    elif len(out) > new_length:
-        del out[new_length:]
+    out.extend(b"\0" * (new_length - len(out)))
 
-    if code_length + len(signature) > new_length:
+    code_length = slc.code_length
+    _set_signature_command(slc, out, code_length, new_length - code_length)
+
+    if new_length > slc.size:
+        _grow_linkedit(slc, out, new_length)
+
+    return bytes(out)
+
+
+def place_signature(slc: Slice, data: bytes, code_length: int, signature: bytes) -> bytes:
+    """Write ``signature`` into a slice previously sized by :func:`grow_slice`."""
+    out = bytearray(data)
+    end = code_length + len(signature)
+    if end > len(out) or code_length < 0:
         raise MachOError("signature does not fit in the region it was sized for")
-    out[code_length : code_length + len(signature)] = signature
+    out[code_length:end] = signature
+    _set_signature_command(slc, out, code_length, len(out) - code_length)
+    return bytes(out)
 
+
+def _set_signature_command(slc: Slice, out: bytearray, code_length: int, region: int) -> None:
+    """Create or update the ``LC_CODE_SIGNATURE`` load command."""
     endian = slc.endian
     if slc.code_signature is None:
         if slc.load_commands_free_space < 16:
@@ -399,20 +420,11 @@ def build_slice(slc: Slice, code_length: int, new_length: int, signature: bytes)
                 f"{slc.load_commands_free_space} bytes free, 16 needed"
             )
         cmd_off = slc.header_size + slc.sizeofcmds
-        struct.pack_into(
-            endian + "IIII", out, cmd_off, LC_CODE_SIGNATURE, 16, code_length, new_length - code_length
-        )
+        struct.pack_into(endian + "IIII", out, cmd_off, LC_CODE_SIGNATURE, 16, code_length, region)
         struct.pack_into(endian + "I", out, 16, slc.ncmds + 1)
         struct.pack_into(endian + "I", out, 20, slc.sizeofcmds + 16)
     else:
-        struct.pack_into(
-            endian + "II", out, slc.code_signature.offset + 8, code_length, new_length - code_length
-        )
-
-    if new_length > slc.size:
-        _grow_linkedit(slc, out, new_length)
-
-    return bytes(out)
+        struct.pack_into(endian + "II", out, slc.code_signature.offset + 8, code_length, region)
 
 
 def _grow_linkedit(slc: Slice, out: bytearray, new_length: int) -> None:
@@ -481,7 +493,8 @@ __all__ = [
     "align_up",
     "round_up",
     "signature_region_size",
-    "build_slice",
+    "grow_slice",
+    "place_signature",
     "build_fat",
     "MH_EXECUTE",
     "LC_CODE_SIGNATURE",
