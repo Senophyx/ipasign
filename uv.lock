@@ -180,7 +180,6 @@ wheels = [
 
 [[package]]
 name = "ipasign"
-version = "1.0"
 source = { editable = "." }
 dependencies = [
     { name = "asn1crypto" },

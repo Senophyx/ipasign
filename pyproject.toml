@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ipasign"
-version = "1.0"
+dynamic = ["version"]
 description = "iOS code signing in Python"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,6 +37,9 @@ Repository = "https://github.com/Senophyx/ipasign"
 
 [tool.setuptools]
 include-package-data = true
+
+[tool.setuptools.dynamic]
+version = { attr = "ipasign.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]
