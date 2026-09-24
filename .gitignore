@@ -219,5 +219,12 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# IPA Sign
+.ipasign_tmp/
+*.is_tmp
+
 # Testing
 *__test*
+
+# macOS
+.DS_Store
