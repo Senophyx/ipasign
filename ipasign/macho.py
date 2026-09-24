@@ -202,6 +202,8 @@ class Slice:
 
 
 def _parse_slice(data: bytes, base: int, size: int) -> Slice:
+    if base + size > len(data):
+        raise MachOError("slice runs past the end of the file")
     magic = struct.unpack_from("<I", data, base)[0]
     if magic not in THIN_MAGICS:
         raise MachOError(f"not a Mach-O magic at offset {base}: 0x{magic:08x}")
@@ -328,6 +330,15 @@ class MachOFile:
 
     @classmethod
     def parse(cls, data: bytes) -> "MachOFile":
+        try:
+            return cls._parse(data)
+        except struct.error as exc:
+            # struct.error is not part of the public API: a truncated or
+            # malformed binary becomes a MachOError at the boundary.
+            raise MachOError(f"malformed Mach-O: {exc}") from exc
+
+    @classmethod
+    def _parse(cls, data: bytes) -> "MachOFile":
         if len(data) < 8:
             raise MachOError("file is too short to be a Mach-O")
         head = bytes(data[:4])
@@ -346,13 +357,19 @@ class MachOFile:
     @classmethod
     def _parse_fat(cls, data: bytes, big_endian: bool) -> "MachOFile":
         endian = ">" if big_endian else "<"
+        if len(data) < 8:
+            raise MachOError("fat header is truncated")
         nfat = struct.unpack_from(endian + "I", data, 4)[0]
+        if len(data) < 8 + nfat * 20:
+            raise MachOError(f"fat header claims {nfat} architectures but is truncated")
         archs: list[FatArch] = []
         slices: list[Slice] = []
         for i in range(nfat):
             cputype, cpusubtype, offset, size, align = struct.unpack_from(
                 endian + "5I", data, 8 + i * 20
             )
+            if offset + size > len(data):
+                raise MachOError(f"fat arch {i} runs past the end of the file")
             archs.append(FatArch(cputype, cpusubtype, offset, size, align))
             slices.append(_parse_slice(data, offset, size))
         return cls(data=data, is_fat=True, fat_big_endian=big_endian, slices=slices, archs=archs)

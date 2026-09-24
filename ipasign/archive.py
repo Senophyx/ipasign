@@ -160,8 +160,14 @@ def _zip_time(path: Path) -> tuple[int, int, int, int, int, int]:
 
 
 def cleanup(root: Path) -> None:
-    """Remove a scratch directory, ignoring a missing one."""
+    """Remove a scratch directory, pruning the ``.ipasign_tmp`` root when empty."""
     shutil.rmtree(root, ignore_errors=True)
+    parent = root.parent
+    if parent.name == SCRATCH_DIR and parent.is_dir() and not any(parent.iterdir()):
+        try:
+            parent.rmdir()
+        except OSError:
+            pass
 
 
 __all__ = ["SCRATCH_DIR", "Unpacked", "cleanup", "find_app", "pack", "scratch_root", "unpack"]

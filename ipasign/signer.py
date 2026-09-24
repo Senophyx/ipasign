@@ -88,7 +88,9 @@ class Signer:
         ent_xml, ent_der = self.entitlements_for(slc.is_execute)
 
         if self.adhoc:
-            cms_blob = blobs.blob_wrapper(b"")
+            # Ad-hoc has no CMS blob at all: the slot is left out of the
+            # SuperBlob rather than written as an empty wrapper.
+            cms_blob = b""
         else:
             if self.identity is None:
                 raise BundleError("a non-ad-hoc signature needs an identity")
