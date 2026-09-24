@@ -15,7 +15,7 @@ from pathlib import Path
 
 from . import archive, bundle, macho
 from .credentials import ProvisioningProfile, load_entitlements, load_identity, load_profile
-from .errors import InvalidInputError, MachOError
+from .errors import BundleError, InvalidInputError, MachOError
 from .signer import (
     FileContext,
     Signer,
@@ -32,11 +32,19 @@ class SignResult:
     ``output_path`` is where the artifact actually landed, ``bundle_id`` the
     identifier sealed into the CodeDirectory, and ``signed_count`` how many
     Mach-O files were signed.
+
+    ``app_name`` and ``app_version`` describe the app itself, read from the
+    bundle's ``Info.plist``. ``app_version`` is the release version
+    (``CFBundleShortVersionString``), which is what a person recognises, not the
+    build number. Both are empty for a bare Mach-O, which has no ``Info.plist``
+    to read them from.
     """
 
     output_path: str
     bundle_id: str
     signed_count: int
+    app_name: str = ""
+    app_version: str = ""
 
 
 def _looks_like_macho(path: Path) -> bool:
@@ -185,6 +193,8 @@ class Key:
                 output_path=str(target),
                 bundle_id=result.bundle_id,
                 signed_count=result.signed_count,
+                app_name=result.app_name,
+                app_version=result.app_version,
             )
         finally:
             if not keep:
@@ -200,6 +210,8 @@ class Key:
             output_path=str(folder),
             bundle_id=result.bundle_id,
             signed_count=result.signed_count,
+            app_name=result.app_name,
+            app_version=result.app_version,
         )
 
     def _sign_macho(self, path: Path, bundle_id: str | None) -> SignResult:
@@ -215,7 +227,25 @@ class Key:
             info_plist_hash=embedded_info_plist_hash(slc),
         )
         count = sign_macho_file(self._signer(), path, ctx)
-        return SignResult(output_path=str(path), bundle_id=resolved_id, signed_count=count)
+
+        # A bare Mach-O may still carry an embedded Info.plist, which is the only
+        # place its name and version could come from.
+        name = version = ""
+        if slc.info_plist:
+            try:
+                info = bundle.parse_info_plist(slc.info_plist)
+            except BundleError:
+                info = {}
+            name = bundle.display_name(info)
+            version = bundle.app_version(info)
+
+        return SignResult(
+            output_path=str(path),
+            bundle_id=resolved_id,
+            signed_count=count,
+            app_name=name,
+            app_version=version,
+        )
 
 
 __all__ = ["Key", "SignResult"]

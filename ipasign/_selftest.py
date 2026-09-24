@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import plistlib
 
-from . import _plist, blobs, macho
+from . import _plist, blobs, bundle, macho
 
 
 def test_der_integers() -> None:
@@ -174,6 +174,35 @@ def test_hash_pages_short_final_page() -> None:
     slots = blobs.hash_pages(data, 5000)
     assert len(slots) == 2
     assert slots[1] == __import__("hashlib").sha256(b"\x01" * 904).digest()
+
+
+def test_display_name_fallback() -> None:
+    assert bundle.display_name({"CFBundleDisplayName": "Nexa"}) == "Nexa"
+    assert bundle.display_name({"CFBundleName": "Nexa"}) == "Nexa"
+    assert bundle.display_name({"CFBundleExecutable": "Runner"}) == "Runner"
+    # Display name wins when several are present.
+    assert (
+        bundle.display_name(
+            {"CFBundleDisplayName": "Nexa", "CFBundleName": "Other", "CFBundleExecutable": "Runner"}
+        )
+        == "Nexa"
+    )
+    # An empty value must not stop the search.
+    assert bundle.display_name({"CFBundleDisplayName": "", "CFBundleName": "Nexa"}) == "Nexa"
+    assert bundle.display_name({}) == ""
+
+
+def test_app_version_prefers_release() -> None:
+    # The release version wins over the build number.
+    assert (
+        bundle.app_version({"CFBundleShortVersionString": "1.0.2", "CFBundleVersion": "2"})
+        == "1.0.2"
+    )
+    # With no release version the build number is the only answer.
+    assert bundle.app_version({"CFBundleVersion": "2"}) == "2"
+    assert bundle.app_version({}) == ""
+    # Non-string plist values must survive the conversion.
+    assert bundle.app_version({"CFBundleVersion": 42}) == "42"
 
 
 def main() -> int:

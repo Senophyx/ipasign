@@ -41,6 +41,39 @@ def is_macho_file(path: Path) -> bool:
         return False
 
 
+def parse_info_plist(raw: bytes) -> dict:
+    """Parse ``Info.plist`` bytes into a dictionary."""
+    try:
+        parsed = _plist.loads(raw)
+    except Exception as exc:
+        raise BundleError(f"Info.plist is not a plist: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise BundleError("Info.plist is not a dictionary")
+    return parsed
+
+
+def display_name(info: dict) -> str:
+    """The name a user recognises, falling back until one is found.
+
+    Most bundles carry ``CFBundleDisplayName``, some only ``CFBundleName``, and
+    a few neither, in which case the executable name is the best available.
+    """
+    for key in ("CFBundleDisplayName", "CFBundleName", "CFBundleExecutable"):
+        value = info.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def app_version(info: dict) -> str:
+    """The release version, with the build number as a fallback."""
+    for key in ("CFBundleShortVersionString", "CFBundleVersion"):
+        value = info.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
 def read_info_plist(bundle: Path) -> dict:
     """Parse a bundle's ``Info.plist``."""
     info_path = bundle / "Info.plist"
@@ -51,13 +84,7 @@ def read_info_plist(bundle: Path) -> dict:
     except OSError as exc:
         raise BundleError(f"cannot read {info_path}: {exc}") from exc
 
-    try:
-        parsed = _plist.loads(raw)
-    except Exception as exc:
-        raise BundleError(f"{info_path} is not a plist: {exc}") from exc
-    if not isinstance(parsed, dict):
-        raise BundleError(f"{info_path} is not a dictionary")
-    return parsed
+    return parse_info_plist(raw)
 
 
 def bundle_details(bundle: Path) -> tuple[str, str, bytes]:
@@ -178,6 +205,8 @@ class BundleResult:
 
     bundle_id: str
     signed_count: int
+    app_name: str = ""
+    app_version: str = ""
 
 
 def _write_code_resources(bundle: Path, data: bytes) -> None:
@@ -225,19 +254,28 @@ def sign_bundle(
             # Info.plist or no executable) is left alone, like the reference.
             continue
 
-    bundle_id, _executable, _info = bundle_details(root)
+    bundle_id, _executable, info = bundle_details(root)
+    parsed = parse_info_plist(info)
     signed += sign_bundle_member(signer, root)
-    return BundleResult(bundle_id=bundle_id, signed_count=signed)
+    return BundleResult(
+        bundle_id=bundle_id,
+        signed_count=signed,
+        app_name=display_name(parsed),
+        app_version=app_version(parsed),
+    )
 
 
 __all__ = [
     "BundleResult",
     "MACHO_MAGICS",
+    "app_version",
     "bundle_details",
     "collect_macho_files",
     "collect_nested_bundles",
+    "display_name",
     "generate_code_resources",
     "is_macho_file",
+    "parse_info_plist",
     "read_info_plist",
     "sign_bundle",
     "sign_bundle_member",
