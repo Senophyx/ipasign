@@ -13,13 +13,16 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import archive, bundle
+from . import archive, bundle, macho
 from .credentials import ProvisioningProfile, load_entitlements, load_identity, load_profile
-from .errors import InvalidInputError
-from .signer import FileContext, Signer, bundle_id_fallback, embedded_info_plist_hash, sign_macho_file
-from . import macho
-
-APP_SUFFIXES = (".app", ".appex")
+from .errors import InvalidInputError, MachOError
+from .signer import (
+    FileContext,
+    Signer,
+    bundle_id_fallback,
+    embedded_info_plist_hash,
+    sign_macho_file,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +42,7 @@ class SignResult:
 def _looks_like_macho(path: Path) -> bool:
     try:
         with open(path, "rb") as handle:
-            return handle.read(4) in bundle._MACHO_MAGICS
+            return handle.read(4) in bundle.MACHO_MAGICS
     except OSError:
         return False
 
@@ -49,7 +52,7 @@ class Key:
 
     ``pkey`` is a ``.p12`` path and ``prov`` a ``.mobileprovision`` path. Pass
     ``adhoc=True`` for a credential-less ad-hoc key, in which case both may be
-    ``None``. ``entitlements`` overrides the profile's entitlements with a plist
+    ``None``. ``entitlements`` replaces the profile's entitlements with a plist
     file of the caller's own.
     """
 
@@ -87,15 +90,16 @@ class Key:
         if not self.adhoc:
             self.identity = load_identity(pkey, password, self.profile)
 
-    # credential derived material
     @property
     def team_id(self) -> str:
+        """Team identifier sealed into the CodeDirectory."""
         if self._team_id_override is not None:
             return self._team_id_override
         return self.profile.team_id if self.profile else ""
 
     @property
     def subject_cn(self) -> str:
+        """Leaf certificate common name, pinned by the designated requirement."""
         if self._subject_cn_override is not None:
             return self._subject_cn_override
         return self.identity.subject_cn if self.identity else ""
@@ -119,7 +123,6 @@ class Key:
             signing_time=datetime.datetime.now(datetime.timezone.utc),
         )
 
-    # the single entry point
     def sign(
         self,
         input_path: str | os.PathLike,
@@ -132,9 +135,13 @@ class Key:
         """Sign ``input_path`` and return where the result landed.
 
         An ``.ipa`` unpacks into ``.ipasign_tmp`` beside the input, signs the
-        bundle and repacks into ``output_path``. A ``.app`` folder is signed in
+        bundle and repacks into ``output_path``. An ``.app`` folder is signed in
         place. A bare Mach-O is signed in place, so passing ``output_path`` for
         one is an error rather than a parameter that quietly does nothing.
+
+        ``bundle_id`` names the identifier to seal for a bare Mach-O, which has
+        no bundle to read one from. Bundles keep the identifier in their own
+        ``Info.plist``.
         """
         path = Path(input_path)
         if not path.exists():
@@ -144,7 +151,7 @@ class Key:
             return self._sign_folder(path, output_path)
 
         if path.suffix.lower() == ".ipa":
-            return self._sign_ipa(path, output_path, keep_work_dir, tmp_folder, bundle_id)
+            return self._sign_ipa(path, output_path, keep_work_dir, tmp_folder)
 
         if _looks_like_macho(path):
             if output_path is not None:
@@ -155,14 +162,12 @@ class Key:
 
         raise InvalidInputError(f"do not know how to sign: {path}")
 
-    # per input type
     def _sign_ipa(
         self,
         ipa: Path,
         output: str | os.PathLike | None,
         keep_work_dir: bool,
         tmp_folder: str | os.PathLike | None,
-        bundle_id: str | None,
     ) -> SignResult:
         if output is None:
             raise InvalidInputError("signing an .ipa needs an output path")
@@ -178,7 +183,7 @@ class Key:
             archive.pack(unpacked.root, target)
             return SignResult(
                 output_path=str(target),
-                bundle_id=bundle_id or result.bundle_id,
+                bundle_id=result.bundle_id,
                 signed_count=result.signed_count,
             )
         finally:
@@ -198,8 +203,12 @@ class Key:
         )
 
     def _sign_macho(self, path: Path, bundle_id: str | None) -> SignResult:
-        parsed = macho.MachOFile.parse(path.read_bytes())
-        slc = parsed.slices[0]
+        try:
+            data = path.read_bytes()
+        except OSError as exc:
+            raise MachOError(f"cannot read {path}: {exc}") from exc
+
+        slc = macho.MachOFile.parse(data).slices[0]
         resolved_id = bundle_id or bundle_id_fallback(slc, path)
         ctx = FileContext(
             bundle_id=resolved_id,

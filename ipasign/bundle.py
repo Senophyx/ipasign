@@ -22,7 +22,7 @@ from .signer import FileContext, Signer, sign_macho_file, write_atomic
 BUNDLE_SUFFIXES = (".app", ".appex", ".framework", ".xctest")
 CODE_RESOURCES = "_CodeSignature/CodeResources"
 
-_MACHO_MAGICS = (
+MACHO_MAGICS = (
     b"\xcf\xfa\xed\xfe",
     b"\xce\xfa\xed\xfe",
     b"\xfe\xed\xfa\xce",
@@ -36,7 +36,7 @@ def is_macho_file(path: Path) -> bool:
     """Whether ``path`` starts with a thin or fat Mach-O magic."""
     try:
         with open(path, "rb") as handle:
-            return handle.read(4) in _MACHO_MAGICS
+            return handle.read(4) in MACHO_MAGICS
     except OSError:
         return False
 
@@ -232,6 +232,7 @@ def sign_bundle(
 
 __all__ = [
     "BundleResult",
+    "MACHO_MAGICS",
     "bundle_details",
     "collect_macho_files",
     "collect_nested_bundles",
