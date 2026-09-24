@@ -1,0 +1,2 @@
+# Source distribution contents. Who needs a test suite on a released product?
+prune tests
