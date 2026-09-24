@@ -87,8 +87,7 @@ class Key:
         if not self.adhoc:
             self.identity = load_identity(pkey, password, self.profile)
 
-    # -- credential derived material -------------------------------------
-
+    # credential derived material
     @property
     def team_id(self) -> str:
         if self._team_id_override is not None:
@@ -120,8 +119,7 @@ class Key:
             signing_time=datetime.datetime.now(datetime.timezone.utc),
         )
 
-    # -- the single entry point -------------------------------------------
-
+    # the single entry point
     def sign(
         self,
         input_path: str | os.PathLike,
@@ -157,8 +155,7 @@ class Key:
 
         raise InvalidInputError(f"do not know how to sign: {path}")
 
-    # -- per input type ---------------------------------------------------
-
+    # per input type
     def _sign_ipa(
         self,
         ipa: Path,

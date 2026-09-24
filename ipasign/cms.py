@@ -161,4 +161,4 @@ def cms_content(cms_bytes: bytes) -> bytes | None:
     return content.native if content.native else None
 
 
-__all__ = ["CmsParts", "build_cms", "cms_content"]
+__all__ = ["CmsParts", "build_cms"]

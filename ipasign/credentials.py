@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
 
@@ -132,11 +132,6 @@ class Identity:
                 return attr.value
         raise CredentialError("leaf certificate has no subject common name")
 
-    @property
-    def intermediates(self) -> list[x509.Certificate]:
-        """Chain members above the leaf, leaf excluded."""
-        return [cert for cert in self.chain if cert != self.certificate]
-
 
 def _load_der_certificates(blobs: list[bytes]) -> list[x509.Certificate]:
     certs: list[x509.Certificate] = []
@@ -254,14 +249,6 @@ def load_entitlements(path: str | Path) -> tuple[dict, bytes]:
         raise CredentialError(f"entitlements file {path} is not a dictionary")
 
     return parsed, plistlib.dumps(parsed, fmt=plistlib.FMT_XML, sort_keys=False)
-
-
-def export_public_key_pem(cert: x509.Certificate) -> bytes:
-    """The certificate's public key in SubjectPublicKeyInfo PEM form."""
-    return cert.public_key().public_bytes(
-        serialization.Encoding.PEM,
-        serialization.PublicFormat.SubjectPublicKeyInfo,
-    )
 
 
 __all__ = [

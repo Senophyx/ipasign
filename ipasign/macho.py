@@ -156,20 +156,6 @@ class Slice:
         return round_up(self.size, 16)
 
     @property
-    def signature_length(self) -> int:
-        """Length of the existing signature region, zero when unsigned.
-
-        Code signature blobs are always big-endian, whatever the Mach-O header
-        says, so the length field is read big-endian here.
-        """
-        if self.code_signature is None:
-            return 0
-        start = self.code_signature.data[0]
-        if start + 8 > self.size:
-            return 0
-        return struct.unpack_from(">I", self.data, self.base + start + 4)[0]
-
-    @property
     def text_segment(self) -> Segment | None:
         for seg in self.segments:
             if seg.name == "__TEXT":
