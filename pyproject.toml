@@ -1,0 +1,6 @@
+[project]
+name = "ipasign"
+version = "1.0"
+authors = [{ name = "Senophyx", email = "contact@senophyx.id"}]
+requires-python = ">=3.10"
+dependencies = []
