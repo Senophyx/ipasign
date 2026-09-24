@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import sys
 import unittest
 import zipfile
 
@@ -59,7 +60,13 @@ class UnpackTests(unittest.TestCase):
         self.assertTrue((unpacked.app / "Test").is_file())
         self.assertEqual(unpacked.app.name, "Test.app")
 
+    @unittest.skipIf(sys.platform == "win32", "Windows chmod ignores permission bits")
     def test_extracted_executable_stays_executable(self) -> None:
+        """The execute bit must survive the round trip on POSIX filesystems.
+
+        Windows has no such bit: ``os.chmod`` there only toggles the read-only
+        flag, so the assertion would be meaningless rather than wrong.
+        """
         unpacked = archive.unpack(self.ipa, self.root / "work")
         mode = (unpacked.app / "Test").stat().st_mode
         self.assertTrue(mode & 0o111, "the executable bit must survive the round trip")
