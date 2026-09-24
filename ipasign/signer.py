@@ -220,8 +220,8 @@ def sign_file_data(signer: Signer, data: bytes, ctx: FileContext) -> tuple[bytes
 def bundle_id_fallback(slc: macho.Slice, path: Path) -> str:
     """Bundle id for a file signed outside a bundle.
 
-    The embedded ``__info_plist`` section wins; the file name is the last
-    resort.
+    The embedded ``__info_plist`` section wins; the file's own name, extension
+    included, is the last resort.
     """
     if slc.info_plist:
         try:
@@ -230,7 +230,7 @@ def bundle_id_fallback(slc: macho.Slice, path: Path) -> str:
                 return str(parsed["CFBundleIdentifier"])
         except Exception:
             pass
-    return path.stem
+    return path.name
 
 
 def embedded_info_plist_hash(slc: macho.Slice) -> bytes:

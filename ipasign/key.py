@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import archive, bundle, signer
+from . import archive, bundle
 from .credentials import ProvisioningProfile, load_entitlements, load_identity, load_profile
 from .errors import InvalidInputError
 from .signer import FileContext, Signer, bundle_id_fallback, embedded_info_plist_hash, sign_macho_file
