@@ -7,11 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **Signing moved from `Key` to `App`.** `Key.sign()` is gone. `Key` is now only a credential
+  holder: it loads the `.p12`, the profile and the entitlements, and exposes them through
+  `signer()`. Everything that touches the filesystem lives on `App`.
+
+  ```python
+  # before
+  key = ipasign.Key("identity.p12", "profile.mobileprovision", "password")
+  out = key.sign("input.ipa", "output.ipa")
+
+  # after
+  key = ipasign.Key("identity.p12", "profile.mobileprovision", "password")
+  app = ipasign.App("input.ipa")
+  out = app.sign(key, output="output.ipa")
+  ```
+
+  The signed bytes are unchanged: the same input produces a byte-identical archive through
+  either path.
+
 ### Added
 
-- **`App` facade.** `ipasign.App("input.ipa").sign(key)` signs an archive to a default output
-  named after the input, and returns the same `SignResult` as `Key.sign()`. Pass `output` to
-  name the target explicitly. `Key.sign()` is unchanged.
+- **`App` facade.** `ipasign.App` accepts anything signable: an `.ipa` archive, an `.app`
+  bundle folder, a framework, a dylib or a bare Mach-O executable, and dispatches on what it
+  finds. Every call returns a `SignResult`.
+- **Default output for an archive.** `App("test.ipa").sign(key)` writes `test-signed.ipa`
+  beside the input. Pass `output` to name the target explicitly.
+- **`Key.signer()`** exposes the credential-derived `Signer`, for callers working below the
+  `App` level.
+- **`ipasign.result.SignResult`** now lives in its own module, so `App` and `Key` can both
+  refer to it without importing each other. It is still importable from `ipasign`.
+
+### Changed
+
+- An output path for a bundle folder or a bare Mach-O is now refused on `App.sign()` the same
+  way it was on `Key.sign()`, rather than accepted and ignored.
 
 ## [1.0] - 2026-09-25
 
