@@ -11,6 +11,7 @@ import plistlib
 import shutil
 import struct
 import zipfile
+import zlib
 from pathlib import Path
 
 from asn1crypto import core
@@ -133,6 +134,100 @@ def minimal_fat(*slices: bytes, big_endian: bool = True) -> bytes:
     return bytes(out)
 
 
+def _png_chunk(kind: bytes, payload: bytes) -> bytes:
+    crc = zlib.crc32(kind + payload)
+    return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", crc)
+
+def _filter_rows(rows: list[bytes], kind: int) -> bytes:
+    """Filter each row and prefix it with the filter byte, as an encoder does."""
+    out = bytearray()
+    previous = bytes(len(rows[0]))
+    for row in rows:
+        out.append(kind)
+        if kind == 0:
+            out += row
+        elif kind == 1:
+            out += bytes((row[i] - (row[i - 4] if i >= 4 else 0)) & 0xFF for i in range(len(row)))
+        elif kind == 2:
+            out += bytes((row[i] - previous[i]) & 0xFF for i in range(len(row)))
+        elif kind == 3:
+            out += bytes(
+                (row[i] - (((row[i - 4] if i >= 4 else 0) + previous[i]) >> 1)) & 0xFF
+                for i in range(len(row))
+            )
+        elif kind == 4:
+            out += bytes(
+                (
+                    row[i]
+                    - _paeth(
+                        row[i - 4] if i >= 4 else 0,
+                        previous[i],
+                        previous[i - 4] if i >= 4 else 0,
+                    )
+                )
+                & 0xFF
+                for i in range(len(row))
+            )
+        else:
+            raise ValueError(f"no such PNG filter: {kind}")
+        previous = row
+    return bytes(out)
+
+def _paeth(a: int, b: int, c: int) -> int:
+    estimate = a + b - c
+    pa, pb, pc = abs(estimate - a), abs(estimate - b), abs(estimate - c)
+    if pa <= pb and pa <= pc:
+        return a
+    return b if pb <= pc else c
+
+def standard_png(rows: list[bytes], filter_kind: int = 0) -> bytes:
+    """An 8-bit RGBA PNG, one byte per channel.
+
+    ``rows`` holds raw RGBA bytes; ``filter_kind`` selects the PNG filter the
+    encoder applies to every row, exactly one of 0 to 4.
+    """
+    width = len(rows[0]) // 4
+    ihdr = struct.pack(">IIBBBBB", width, len(rows), 8, 6, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"IDAT", zlib.compress(_filter_rows(rows, filter_kind)))
+        + _png_chunk(b"IEND", b"")
+    )
+
+def cgbi_png(rows: list[bytes], filter_kind: int = 0) -> bytes:
+    """The same image crushed the way ``pngcrush -iphone`` would.
+
+    Takes raw RGBA rows and emits Apple's variant: a ``CgBI`` chunk, a
+    headerless deflate stream, and BGRA pixels with premultiplied alpha. The
+    crush happens first and the filter is applied to the crushed bytes, which
+    is the order pngcrush uses and the reverse of what the decoder does.
+    """
+    width = len(rows[0]) // 4
+    ihdr = struct.pack(">IIBBBBB", width, len(rows), 8, 6, 0, 0, 0)
+
+    crushed = []
+    for row in rows:
+        out = bytearray()
+        for i in range(0, len(row), 4):
+            red, green, blue, alpha = row[i : i + 4]
+            if 0 < alpha < 255:
+                red = (red * alpha + 127) // 255
+                green = (green * alpha + 127) // 255
+                blue = (blue * alpha + 127) // 255
+            out += bytes((blue, green, red, alpha))
+        crushed.append(bytes(out))
+
+    deflate = zlib.compressobj(level=6, wbits=-zlib.MAX_WBITS)
+    payload = deflate.compress(_filter_rows(crushed, filter_kind)) + deflate.flush()
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"CgBI", b"\0\0\0\0")
+        + _png_chunk(b"IHDR", ihdr)
+        + _png_chunk(b"IDAT", payload)
+        + _png_chunk(b"IEND", b"")
+    )
+
 def info_plist(**overrides) -> bytes:
     """A minimal ``Info.plist`` for a fake bundle."""
     info = {
@@ -224,6 +319,12 @@ def mobileprovision(
         }
     ).dump()
 
+
+def adhoc_key():
+    """A credential-less key, for tests that only need a signature to exist."""
+    from ipasign.key import Key
+
+    return Key(adhoc=True)
 
 def test_code_directory(size: int = 256) -> bytes:
     """A stand-in CodeDirectory blob, enough for CMS tests to hash."""
