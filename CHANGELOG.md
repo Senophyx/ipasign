@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `App` level.
 - **`ipasign.result.SignResult`** now lives in its own module, so `App` and `Key` can both
   refer to it without importing each other. It is still importable from `ipasign`.
+- **Metadata extraction.** `App.metadata()` reads an app's name, version, bundle identifier,
+  archive size, primary icon name and a timestamp, without signing and without a credential.
+  Pass `save_to` to also write `metadata.json` and the app's primary icon into that directory.
+  Works for an `.ipa`, an `.app` bundle folder and a bare Mach-O with an embedded
+  `Info.plist`. `size` and `file_name` describe an archive, so both are empty for the two
+  non-archive cases. `Metadata` is exported from `ipasign`.
+- **CgBI icon decoding.** Icons crushed by `pngcrush -iphone` are converted back to a standard
+  PNG (headerless inflate, row unfiltering, BGRA swap, alpha un-premultiplication) before they
+  are written.
 
 ### Changed
 
