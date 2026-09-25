@@ -229,3 +229,7 @@ tests/.scratch/
 
 # macOS
 .DS_Store
+
+# vibecode they say
+AGENTS.md
+.pi/
