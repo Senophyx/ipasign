@@ -17,6 +17,7 @@ default output named after the input; everything else is signed in place.
 """
 
 from .app import App
+from .check import CertCheckResult, CertificateInfo, OcspResult, check
 from .errors import (
     ArchiveError,
     BlobError,
@@ -39,6 +40,10 @@ __all__ = [
     "Key",
     "Metadata",
     "SignResult",
+    "CertCheckResult",
+    "CertificateInfo",
+    "OcspResult",
+    "check",
     "IpasignError",
     "InvalidInputError",
     "MachOError",

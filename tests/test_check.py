@@ -16,13 +16,16 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.x509.oid import NameOID
 
-from ipasign import check
+import importlib
+
 from ipasign.check import certificate_info
 from ipasign.credentials import Identity
 from ipasign.errors import CredentialError, InvalidInputError
 from ipasign.signer import FileContext, Signer, sign_file_data
 
 from . import fixtures
+
+check = importlib.import_module("ipasign.check")
 
 def _build_cert(
     cn: str,

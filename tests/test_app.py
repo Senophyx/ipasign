@@ -262,5 +262,41 @@ class AppMachoTests(unittest.TestCase):
         self.assertEqual(result.app_name, "TestApp")
         self.assertEqual(result.app_version, "2.3.4")
 
+class AppCheckTests(unittest.TestCase):
+    """App.check reads the certificate without signing."""
+
+    def setUp(self) -> None:
+        self.root = fixtures.scratch_dir("app_check")
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_unsigned_macho_reports_not_signed(self) -> None:
+        runner = self.root / "Runner"
+        runner.write_bytes(fixtures.minimal_macho())
+        result = App(runner).check(ocsp=False)
+        self.assertFalse(result.signed)
+        self.assertEqual(result.code, -2)
+
+    def test_unsigned_ipa_reports_not_signed(self) -> None:
+        ipa = fixtures.fake_ipa(self.root / "Test.ipa")
+        result = App(ipa).check(ocsp=False)
+        self.assertEqual(result.type, "IPA")
+        self.assertFalse(result.signed)
+
+    def test_bundle_folder_resolves_to_its_executable(self) -> None:
+        app = fixtures.fake_bundle(self.root / "Test.app")
+        result = App(app).check(ocsp=False)
+        self.assertEqual(result.path, str(app / "Test"))
+        self.assertEqual(result.type, "Mach-O")
+        self.assertFalse(result.signed)
+
+    def test_bundle_without_an_executable_raises(self) -> None:
+        app = self.root / "Empty.app"
+        app.mkdir()
+        (app / "Info.plist").write_bytes(fixtures.info_plist())
+        with self.assertRaises(InvalidInputError):
+            App(app).check(ocsp=False)
+
 if __name__ == "__main__":
     unittest.main()

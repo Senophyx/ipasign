@@ -270,7 +270,78 @@ class KeyValidationTests(unittest.TestCase):
         with self.assertRaises(InvalidInputError):
             Key("x.p12")
 
+class KeyCheckTests(unittest.TestCase):
+    """Key.check reports the loaded identity without touching the file again."""
 
+    def setUp(self) -> None:
+        import datetime
+
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.hazmat.primitives.serialization import pkcs12
+        from cryptography.x509.oid import NameOID
+
+        self.root = fixtures.scratch_dir("key_check")
+
+        def self_signed(cn: str) -> tuple[object, x509.Certificate]:
+            key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            name = x509.Name(
+                [
+                    x509.NameAttribute(NameOID.COMMON_NAME, cn),
+                    x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, "ABCDE12345"),
+                ]
+            )
+            now = datetime.datetime.now(datetime.timezone.utc)
+            certificate = (
+                x509.CertificateBuilder()
+                .subject_name(name)
+                .issuer_name(name)
+                .public_key(key.public_key())
+                .serial_number(x509.random_serial_number())
+                .not_valid_before(now - datetime.timedelta(days=1))
+                .not_valid_after(now + datetime.timedelta(days=30))
+                .sign(key, hashes.SHA256())
+            )
+            return key, certificate
+
+        cn = "Apple Development: Test Corp (ABCDE12345)"
+        leaf_key, leaf = self_signed(cn)
+        # The p12 carries no CA chain, so the profile supplies an issuer with the
+        # same subject name the leaf names as its issuer.
+        _issuer_key, issuer = self_signed(cn)
+
+        self.p12 = self.root / "identity.p12"
+        self.p12.write_bytes(
+            pkcs12.serialize_key_and_certificates(
+                b"test", leaf_key, leaf, None, serialization.NoEncryption()
+            )
+        )
+        self.profile = self.root / "profile.mobileprovision"
+        self.profile.write_bytes(
+            fixtures.mobileprovision(
+                developer_certificates=[issuer.public_bytes(serialization.Encoding.DER)]
+            )
+        )
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_adhoc_reports_not_signed(self) -> None:
+        result = Key(adhoc=True).check()
+        self.assertEqual(result.status, "not_signed")
+        self.assertIsNone(result.signed)
+        self.assertIsNone(result.certificate)
+
+    def test_reports_the_identity_certificate(self) -> None:
+        result = Key(self.p12, self.profile, None).check(ocsp=False)
+        self.assertEqual(result.type, "PKCS#12")
+        self.assertEqual(result.path, str(self.p12))
+        self.assertIsNone(result.signed)
+        self.assertEqual(result.name, "Apple Development: Test Corp (ABCDE12345)")
+        self.assertEqual(result.team, "ABCDE12345")
+        self.assertEqual(result.ocsp.status, "Skipped")
+        self.assertEqual(result.code, 0)
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,6 +23,8 @@ import os
 from pathlib import Path
 
 from . import archive, bundle, macho, metadata
+from . import check as _check
+from .check import CertCheckResult
 from .errors import BundleError, InvalidInputError, MachOError
 from .key import Key
 from .metadata import Metadata
@@ -139,6 +141,26 @@ class App:
     ) -> Metadata:
         output = Path(save_to) if save_to is not None else None
         return metadata.from_info(info, icon_folder, ipa_file, output)
+
+    def check(self, *, ocsp: bool = True, timeout: float = 10.0) -> CertCheckResult:
+        """Report the certificate this app is signed with.
+
+        A bundle folder is resolved to its ``CFBundleExecutable`` and that
+        binary is checked, so the reported path is the executable. An archive
+        or a bare Mach-O is checked directly. ``ocsp=False`` skips the
+        revocation query.
+        """
+        if not self.path.is_dir():
+            return _check.check(self.path, ocsp=ocsp, timeout=timeout)
+
+        info = bundle.read_info_plist(self.path)
+        executable = info.get("CFBundleExecutable")
+        if not executable:
+            raise InvalidInputError(f"{self.path}/Info.plist has no CFBundleExecutable")
+        binary = self.path / str(executable)
+        if not binary.is_file():
+            raise InvalidInputError(f"bundle executable not found: {binary}")
+        return _check.check(binary, ocsp=ocsp, timeout=timeout)
 
     def _sign_ipa(
         self,

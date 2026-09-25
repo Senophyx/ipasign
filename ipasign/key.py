@@ -17,6 +17,8 @@ from __future__ import annotations
 import datetime
 import os
 
+from . import check as _check
+from .check import CertCheckResult
 from .credentials import ProvisioningProfile, load_entitlements, load_identity, load_profile
 from .errors import InvalidInputError
 from .result import SignResult
@@ -46,6 +48,7 @@ class Key:
         self.password = password
         self.profile: ProvisioningProfile | None = None
         self.identity = None
+        self._p12_path = None if pkey is None else os.fspath(pkey)
         self._entitlements_override = entitlements
         self._team_id_override = team_id
         self._subject_cn_override = subject_cn
@@ -98,6 +101,30 @@ class Key:
             team_id=self.team_id,
             subject_cn=self.subject_cn,
             signing_time=datetime.datetime.now(datetime.timezone.utc),
+        )
+
+    def check(self, *, ocsp: bool = True, timeout: float = 10.0) -> CertCheckResult:
+        """Report the identity's certificate and its OCSP revocation status.
+
+        An ad-hoc key has no certificate, so it reports ``not_signed`` rather
+        than raising. ``ocsp=False`` skips the revocation query.
+        """
+        if self.identity is None:
+            return CertCheckResult(
+                path=self._p12_path or "",
+                type="PKCS#12",
+                signed=None,
+                certificate=None,
+                ocsp=None,
+                code=-2,
+                status="not_signed",
+            )
+        return _check._check_identity(
+            self._p12_path or "",
+            self.identity.certificate,
+            self.identity.chain,
+            ocsp=ocsp,
+            timeout=timeout,
         )
 
 __all__ = ["Key", "SignResult"]
