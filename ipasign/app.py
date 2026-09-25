@@ -13,7 +13,8 @@ An ``.ipa`` is unpacked, signed and repacked, so it gets a default output named
 after the input. A bundle folder and a bare Mach-O are signed where they are,
 so ``output`` is refused for them rather than accepted and ignored.
 
-Every call returns a :class:`~ipasign.result.SignResult`.
+Every call returns a :class:`~ipasign.result.SignResult`. :meth:`App.metadata`
+reads the same input without signing it.
 """
 
 from __future__ import annotations
@@ -21,9 +22,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from . import archive, bundle, macho
+from . import archive, bundle, macho, metadata
 from .errors import BundleError, InvalidInputError, MachOError
 from .key import Key
+from .metadata import Metadata
 from .result import SignResult
 from .signer import (
     FileContext,
@@ -97,6 +99,46 @@ class App:
             return self._sign_macho(key, output, bundle_id)
 
         raise InvalidInputError(f"do not know how to sign: {self.path}")
+
+    def metadata(self, save_to: str | os.PathLike | None = None) -> Metadata:
+        """Read what this app says about itself.
+
+        An archive is unpacked for the read and cleaned up again, so this never
+        modifies it. ``save_to`` additionally writes ``metadata.json`` and the
+        primary icon into that directory, creating it when missing.
+
+        ``size`` and ``file_name`` describe an ``.ipa``, so both are empty for a
+        bundle folder and for a bare Mach-O. Every field is read from what the
+        app declares, so a bare Mach-O with no embedded ``Info.plist`` reports
+        empty values throughout.
+        """
+        if self.path.is_dir():
+            return self._metadata_for(bundle.read_info_plist(self.path), self.path, save_to)
+
+        if self.path.suffix.lower() == ".ipa":
+            unpacked = archive.unpack(self.path)
+            try:
+                return self._metadata_for(
+                    bundle.read_info_plist(unpacked.app), unpacked.app, save_to, self.path
+                )
+            finally:
+                archive.cleanup(unpacked.root)
+
+        # A bare Mach-O has no bundle root, so the only place its name and
+        # version could come from is the plist embedded in the file itself.
+        slc = macho.MachOFile.parse(self.path.read_bytes()).slices[0]
+        info = bundle.parse_info_plist(slc.info_plist) if slc.info_plist else {}
+        return self._metadata_for(info, None, save_to)
+
+    @staticmethod
+    def _metadata_for(
+        info: dict,
+        icon_folder: Path | None,
+        save_to: str | os.PathLike | None,
+        ipa_file: Path | None = None,
+    ) -> Metadata:
+        output = Path(save_to) if save_to is not None else None
+        return metadata.from_info(info, icon_folder, ipa_file, output)
 
     def _sign_ipa(
         self,
