@@ -31,10 +31,28 @@ Requires Python 3.10 or later. The only dependencies are `cryptography` and
 import ipasign
 
 key = ipasign.Key("identity.p12", "profile.mobileprovision", "password")
-out = key.sign("input.ipa", "output.ipa")
+
+app = ipasign.App("input.ipa")
+out = app.sign(key)
 
 print(f"Successfully signed: {out.output_path}")
 print(f"{out.app_name} {out.app_version} ({out.bundle_id})")
+```
+
+`App` accepts anything signable. An `.ipa` archive gets a default output named
+after the input, so `input.ipa` becomes `input-signed.ipa`. Pass `output` to
+name the target yourself:
+
+```python
+out = ipasign.App("input.ipa").sign(key, output="build/signed.ipa")
+```
+
+A bundle folder, a framework, a dylib and a bare Mach-O executable are signed
+where they are, so `output` is refused for them:
+
+```python
+ipasign.App("Payload/MyApp.app").sign(key)   # signed in place
+ipasign.App("libX.dylib").sign(key)          # signed in place
 ```
 
 `sign()` returns a result object, not a boolean:
@@ -54,7 +72,7 @@ Failures raise. Every exception derives from `ipasign.IpasignError`.
 No credentials needed:
 
 ```python
-ipasign.Key(adhoc=True).sign("input.ipa", "output.ipa")
+ipasign.App("input.ipa").sign(ipasign.Key(adhoc=True))
 ```
 
 ## Changelog
