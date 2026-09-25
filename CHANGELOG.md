@@ -47,6 +47,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CgBI icon decoding.** Icons crushed by `pngcrush -iphone` are converted back to a standard
   PNG (headerless inflate, row unfiltering, BGRA swap, alpha un-premultiplication) before they
   are written.
+- **Certificate inspection.** `ipasign.check(path, password=None, *, ocsp=True, timeout=10.0)`
+  reports the certificate a file carries or was signed with: subject name, derived type,
+  organization, team, serial, validity window, days remaining, key algorithm and issuer. It
+  accepts an `.ipa`, a Mach-O binary, a `.mobileprovision`, a `.p12`, a `.cer`/`.der` or a
+  `.pem`; an archive is read straight out of the zip, without unpacking it. The result is a
+  `CertCheckResult` whose `to_json()` (also `str(result)`) returns the report, and whose
+  certificate fields are forwarded as properties such as `result.expires`. `App.check()`
+  resolves a bundle folder to its `CFBundleExecutable` first, and `Key.check()` reports the
+  already-loaded identity without touching the file again (an ad-hoc key reports
+  `not_signed`).
+- **OCSP revocation checking.** When the issuer is a known Apple intermediate, the certificate's
+  Authority Information Access extension is used to query the responder, falling back to
+  `ocsp.apple.com` otherwise. The outcome is one of `Valid`, `Revoked`, `Unknown`, `Error` or
+  `Skipped` (non-WWDR issuer, or `ocsp=False`), alongside a numeric `code` (`0` valid,
+  `1` revoked, `2` expired, `-2` not signed, `-1` error) and a stable `status` string.
+  `CertCheckResult`, `CertificateInfo` and `OcspResult` are exported from `ipasign`.
 
 ### Changed
 
