@@ -11,10 +11,9 @@ Mach-O executables with a ``.p12`` identity and a ``.mobileprovision`` profile.
     signed = app.sign(key)
     print(f"Successfully signed: {signed.output_path}")
 
-The same run through :meth:`Key.sign`, naming the output explicitly::
-
-    out = key.sign("input.ipa", "output.ipa")
-    print(f"Successfully signed: {out.output_path}")
+:class:`App` accepts anything signable: an ``.ipa`` archive, an ``.app`` bundle
+folder, a framework, a dylib, or a bare Mach-O executable. An archive gets a
+default output named after the input; everything else is signed in place.
 """
 
 from .app import App

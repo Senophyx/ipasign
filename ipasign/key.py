@@ -1,37 +1,26 @@
-"""The public entry point: :class:`Key` and :meth:`Key.sign`.
+"""The signing identity: :class:`Key`.
 
-A ``Key`` holds a signing identity and the entitlements to seal. ``sign``
-dispatches on what it is handed: an ``.ipa`` archive, an ``.app`` bundle folder,
-or a bare Mach-O file. Failures raise; a completed run returns a
-:class:`SignResult`.
+A ``Key`` holds what it takes to sign: the private key, the certificate chain,
+the team identifier and the entitlements to seal. It performs no file I/O. What
+to sign and where to put it is :class:`ipasign.app.App`'s job.
+
+    key = ipasign.Key("identity.p12", "profile.mobileprovision", "password")
+    app = ipasign.App("input.ipa")
+    signed = app.sign(key)
+
+``Key.signer()`` exposes the credential-derived :class:`~ipasign.signer.Signer`
+that the signing paths consume, for callers working at that level.
 """
 
 from __future__ import annotations
 
 import datetime
 import os
-from pathlib import Path
 
-from . import archive, bundle, macho
 from .credentials import ProvisioningProfile, load_entitlements, load_identity, load_profile
-from .errors import BundleError, InvalidInputError, MachOError
+from .errors import InvalidInputError
 from .result import SignResult
-from .signer import (
-    FileContext,
-    Signer,
-    bundle_id_fallback,
-    embedded_info_plist_hash,
-    sign_macho_file,
-)
-
-
-def _looks_like_macho(path: Path) -> bool:
-    try:
-        with open(path, "rb") as handle:
-            return handle.read(4) in bundle.MACHO_MAGICS
-    except OSError:
-        return False
-
+from .signer import Signer
 
 class Key:
     """A signing identity plus the entitlements to seal.
@@ -90,15 +79,17 @@ class Key:
             return self._subject_cn_override
         return self.identity.subject_cn if self.identity else ""
 
-    def _entitlements(self) -> tuple[dict, bytes]:
+    def entitlements(self) -> tuple[dict, bytes]:
+        """(entitlements mapping, plist bytes) this key seals."""
         if self._entitlements_override is not None:
             return load_entitlements(self._entitlements_override)
         if self.profile is not None:
             return self.profile.entitlements, self.profile.entitlements_plist
         return {}, b""
 
-    def _signer(self) -> Signer:
-        entitlements, plist_bytes = self._entitlements()
+    def signer(self) -> Signer:
+        """The credential-derived material every file in one run shares."""
+        entitlements, plist_bytes = self.entitlements()
         return Signer(
             identity=self.identity,
             adhoc=self.adhoc,
@@ -108,122 +99,5 @@ class Key:
             subject_cn=self.subject_cn,
             signing_time=datetime.datetime.now(datetime.timezone.utc),
         )
-
-    def sign(
-        self,
-        input_path: str | os.PathLike,
-        output_path: str | os.PathLike | None = None,
-        *,
-        keep_work_dir: bool = False,
-        tmp_folder: str | os.PathLike | None = None,
-        bundle_id: str | None = None,
-    ) -> SignResult:
-        """Sign ``input_path`` and return where the result landed.
-
-        An ``.ipa`` unpacks into ``.ipasign_tmp`` beside the input, signs the
-        bundle and repacks into ``output_path``. An ``.app`` folder is signed in
-        place. A bare Mach-O is signed in place, so passing ``output_path`` for
-        one is an error rather than a parameter that quietly does nothing.
-
-        ``bundle_id`` names the identifier to seal for a bare Mach-O, which has
-        no bundle to read one from. Bundles keep the identifier in their own
-        ``Info.plist``.
-        """
-        path = Path(input_path)
-        if not path.exists():
-            raise InvalidInputError(f"input does not exist: {path}")
-
-        if path.is_dir():
-            return self._sign_folder(path, output_path)
-
-        if path.suffix.lower() == ".ipa":
-            return self._sign_ipa(path, output_path, keep_work_dir, tmp_folder)
-
-        if _looks_like_macho(path):
-            if output_path is not None:
-                raise InvalidInputError(
-                    "a bare Mach-O is signed in place; an output path would be ignored"
-                )
-            return self._sign_macho(path, bundle_id)
-
-        raise InvalidInputError(f"do not know how to sign: {path}")
-
-    def _sign_ipa(
-        self,
-        ipa: Path,
-        output: str | os.PathLike | None,
-        keep_work_dir: bool,
-        tmp_folder: str | os.PathLike | None,
-    ) -> SignResult:
-        if output is None:
-            raise InvalidInputError("signing an .ipa needs an output path")
-
-        work = Path(tmp_folder) if tmp_folder is not None else None
-        # A caller-named directory implies wanting to look inside it.
-        keep = keep_work_dir or tmp_folder is not None
-
-        unpacked = archive.unpack(ipa, work)
-        try:
-            result = bundle.sign_bundle(self._signer(), unpacked.app, self.profile)
-            target = Path(output)
-            archive.pack(unpacked.root, target)
-            return SignResult(
-                output_path=str(target),
-                bundle_id=result.bundle_id,
-                signed_count=result.signed_count,
-                app_name=result.app_name,
-                app_version=result.app_version,
-            )
-        finally:
-            if not keep:
-                archive.cleanup(unpacked.root)
-
-    def _sign_folder(self, folder: Path, output: str | os.PathLike | None) -> SignResult:
-        if output is not None and Path(output) != folder:
-            raise InvalidInputError(
-                "a bundle is signed in place; move the folder first if you want a copy"
-            )
-        result = bundle.sign_bundle(self._signer(), folder, self.profile)
-        return SignResult(
-            output_path=str(folder),
-            bundle_id=result.bundle_id,
-            signed_count=result.signed_count,
-            app_name=result.app_name,
-            app_version=result.app_version,
-        )
-
-    def _sign_macho(self, path: Path, bundle_id: str | None) -> SignResult:
-        try:
-            data = path.read_bytes()
-        except OSError as exc:
-            raise MachOError(f"cannot read {path}: {exc}") from exc
-
-        slc = macho.MachOFile.parse(data).slices[0]
-        resolved_id = bundle_id or bundle_id_fallback(slc, path)
-        ctx = FileContext(
-            bundle_id=resolved_id,
-            info_plist_hash=embedded_info_plist_hash(slc),
-        )
-        count = sign_macho_file(self._signer(), path, ctx)
-
-        # A bare Mach-O may still carry an embedded Info.plist, which is the only
-        # place its name and version could come from.
-        name = version = ""
-        if slc.info_plist:
-            try:
-                info = bundle.parse_info_plist(slc.info_plist)
-            except BundleError:
-                info = {}
-            name = bundle.display_name(info)
-            version = bundle.app_version(info)
-
-        return SignResult(
-            output_path=str(path),
-            bundle_id=resolved_id,
-            signed_count=count,
-            app_name=name,
-            app_version=version,
-        )
-
 
 __all__ = ["Key", "SignResult"]

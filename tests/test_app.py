@@ -7,7 +7,7 @@ import unittest
 
 from ipasign import archive, macho
 from ipasign.app import App
-from ipasign.errors import InvalidInputError
+from ipasign.errors import ArchiveError, InvalidInputError
 from ipasign.key import Key
 from ipasign.result import SignResult
 
@@ -24,16 +24,20 @@ class AppValidationTests(unittest.TestCase):
         with self.assertRaises(InvalidInputError):
             App(self.root / "nope.ipa")
 
-    def test_a_directory_is_refused(self) -> None:
-        app = fixtures.fake_bundle(self.root / "Test.app")
-        with self.assertRaises(InvalidInputError):
-            App(app)
-
-    def test_a_non_ipa_file_is_refused(self) -> None:
+    def test_a_file_it_cannot_sign_is_refused(self) -> None:
         path = self.root / "notes.txt"
         path.write_text("hello")
         with self.assertRaises(InvalidInputError):
             App(path)
+
+    def test_a_bundle_folder_is_accepted(self) -> None:
+        app = fixtures.fake_bundle(self.root / "Test.app")
+        self.assertEqual(App(app).path, app)
+
+    def test_a_bare_macho_is_accepted(self) -> None:
+        path = self.root / "Runner"
+        path.write_bytes(fixtures.minimal_macho())
+        self.assertEqual(App(path).path, path)
 
     def test_the_input_is_not_touched_on_construction(self) -> None:
         """Building an App must not unpack anything."""
@@ -42,6 +46,16 @@ class AppValidationTests(unittest.TestCase):
         App(ipa)
         self.assertEqual(ipa.read_bytes(), before)
         self.assertFalse((self.root / ".ipasign_tmp").exists())
+
+    def test_only_an_archive_is_flagged_as_one(self) -> None:
+        ipa = fixtures.fake_ipa(self.root / "Test.ipa")
+        app = fixtures.fake_bundle(self.root / "Test.app")
+        macho_path = self.root / "Runner"
+        macho_path.write_bytes(fixtures.minimal_macho())
+
+        self.assertTrue(App(ipa).is_archive)
+        self.assertFalse(App(app).is_archive)
+        self.assertFalse(App(macho_path).is_archive)
 
 class DefaultOutputTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -141,11 +155,112 @@ class AppSignTests(unittest.TestCase):
         self.assertTrue((self.root / "one.ipa").is_file())
         self.assertTrue((self.root / "two.ipa").is_file())
 
-    def test_a_missing_input_is_refused_at_sign_time_too(self) -> None:
+    def test_a_missing_input_is_caught_by_construction(self) -> None:
+        """Validation happens up front, so sign() never sees a bad path."""
         app = App(self.ipa)
         self.ipa.unlink()
-        with self.assertRaises(InvalidInputError):
+        with self.assertRaises(ArchiveError):
             app.sign(Key(adhoc=True))
+
+class AppFolderTests(unittest.TestCase):
+    """A bundle folder is signed where it is."""
+
+    def setUp(self) -> None:
+        self.root = fixtures.scratch_dir("app_folder")
+        self.bundle = fixtures.fake_bundle(self.root / "Test.app")
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_signs_in_place_and_reports_the_folder(self) -> None:
+        result = App(self.bundle).sign(Key(adhoc=True))
+        self.assertIsInstance(result, SignResult)
+        self.assertEqual(result.output_path, str(self.bundle))
+        self.assertEqual(result.bundle_id, "com.example.test")
+        self.assertGreaterEqual(result.signed_count, 1)
+
+    def test_the_executable_really_carries_a_signature(self) -> None:
+        App(self.bundle).sign(Key(adhoc=True))
+        signed = (self.bundle / "Test").read_bytes()
+        self.assertIsNotNone(macho.MachOFile.parse(signed).slices[0].code_signature)
+
+    def test_code_resources_are_written(self) -> None:
+        App(self.bundle).sign(Key(adhoc=True))
+        self.assertTrue((self.bundle / "_CodeSignature" / "CodeResources").is_file())
+
+    def test_an_output_path_is_refused(self) -> None:
+        """In-place is the only sensible target, so fail loudly."""
+        with self.assertRaises(InvalidInputError):
+            App(self.bundle).sign(Key(adhoc=True), output=self.root / "out.app")
+
+    def test_the_default_output_still_names_the_folder(self) -> None:
+        """Only an archive gets a derived name; the property stays harmless."""
+        self.assertEqual(App(self.bundle).default_output.name, "Test-signed.app")
+
+    def test_reports_the_display_name_and_version(self) -> None:
+        app = fixtures.fake_bundle(
+            self.root / "Named.app",
+            CFBundleDisplayName="TestApp",
+            CFBundleShortVersionString="2.3.4",
+        )
+        result = App(app).sign(Key(adhoc=True))
+        self.assertEqual(result.app_name, "TestApp")
+        self.assertEqual(result.app_version, "2.3.4")
+
+class AppMachoTests(unittest.TestCase):
+    """A bare Mach-O is signed where it is."""
+
+    def setUp(self) -> None:
+        self.root = fixtures.scratch_dir("app_macho")
+        self.runner = self.root / "Runner"
+        self.runner.write_bytes(fixtures.minimal_macho())
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_signs_in_place(self) -> None:
+        result = App(self.runner).sign(Key(adhoc=True))
+        self.assertIsInstance(result, SignResult)
+        self.assertEqual(result.output_path, str(self.runner))
+        self.assertEqual(result.signed_count, 1)
+        signed = macho.MachOFile.parse(self.runner.read_bytes())
+        self.assertIsNotNone(signed.slices[0].code_signature)
+
+    def test_bundle_id_falls_back_to_the_file_name(self) -> None:
+        result = App(self.runner).sign(Key(adhoc=True))
+        self.assertEqual(result.bundle_id, "Runner")
+
+    def test_bundle_id_can_be_named(self) -> None:
+        result = App(self.runner).sign(Key(adhoc=True), bundle_id="com.example.custom")
+        self.assertEqual(result.bundle_id, "com.example.custom")
+
+    def test_an_output_path_is_refused(self) -> None:
+        with self.assertRaises(InvalidInputError):
+            App(self.runner).sign(Key(adhoc=True), output=self.root / "out.bin")
+
+    def test_a_dylib_gets_no_der_entitlements(self) -> None:
+        """A non-executable file must not be sealed as an app executable."""
+        dylib = self.root / "libX.dylib"
+        dylib.write_bytes(fixtures.minimal_macho(file_type=0x6))  # MH_DYLIB
+        result = App(dylib).sign(Key(adhoc=True))
+        self.assertEqual(result.bundle_id, "libX.dylib")
+        self.assertEqual(result.signed_count, 1)
+
+    def test_name_and_version_come_from_the_embedded_plist(self) -> None:
+        embedded = self.root / "Embedded"
+        embedded.write_bytes(
+            fixtures.macho_with_info_plist(
+                {
+                    "CFBundleIdentifier": "com.example.embedded",
+                    "CFBundleDisplayName": "TestApp",
+                    "CFBundleShortVersionString": "2.3.4",
+                }
+            )
+        )
+        result = App(embedded).sign(Key(adhoc=True))
+        self.assertEqual(result.bundle_id, "com.example.embedded")
+        self.assertEqual(result.app_name, "TestApp")
+        self.assertEqual(result.app_version, "2.3.4")
 
 if __name__ == "__main__":
     unittest.main()

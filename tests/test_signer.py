@@ -10,7 +10,6 @@ import unittest
 from ipasign import blobs, macho
 from ipasign.errors import BundleError, InvalidInputError, MachOError
 from ipasign.key import Key
-from ipasign.result import SignResult
 from ipasign.signer import (
     FileContext,
     Signer,
@@ -271,87 +270,6 @@ class KeyValidationTests(unittest.TestCase):
         with self.assertRaises(InvalidInputError):
             Key("x.p12")
 
-
-class KeySignDispatchTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.root = fixtures.scratch_dir("key_dispatch")
-
-    def tearDown(self) -> None:
-        shutil.rmtree(self.root, ignore_errors=True)
-
-    def test_missing_input_raises(self) -> None:
-        with self.assertRaises(InvalidInputError):
-            Key(adhoc=True).sign(self.root / "nope.ipa")
-
-    def test_unknown_input_raises(self) -> None:
-        path = self.root / "notes.txt"
-        path.write_text("hello")
-        with self.assertRaises(InvalidInputError):
-            Key(adhoc=True).sign(path)
-
-    def test_macho_rejects_output_path(self) -> None:
-        """Signing in place is the only sensible default, so fail loudly."""
-        path = self.root / "Runner"
-        path.write_bytes(fixtures.minimal_macho())
-        with self.assertRaises(InvalidInputError):
-            Key(adhoc=True).sign(path, self.root / "out.bin")
-
-    def test_macho_signs_in_place(self) -> None:
-        path = self.root / "Runner"
-        path.write_bytes(fixtures.minimal_macho())
-        result = Key(adhoc=True).sign(path)
-        self.assertIsInstance(result, SignResult)
-        self.assertEqual(result.output_path, str(path))
-        self.assertEqual(result.bundle_id, "Runner")
-        self.assertEqual(result.signed_count, 1)
-        self.assertIsNotNone(macho.MachOFile.parse(path.read_bytes()).slices[0].code_signature)
-
-    def test_macho_bundle_id_override(self) -> None:
-        path = self.root / "Runner"
-        path.write_bytes(fixtures.minimal_macho())
-        result = Key(adhoc=True).sign(path, bundle_id="com.example.custom")
-        self.assertEqual(result.bundle_id, "com.example.custom")
-
-    def test_bundle_reports_name_and_version(self) -> None:
-        app = fixtures.fake_bundle(self.root / "Test.app", CFBundleDisplayName="Nexa",
-                                   CFBundleShortVersionString="1.0.2")
-        result = Key(adhoc=True).sign(app)
-        self.assertEqual(result.app_name, "Nexa")
-        self.assertEqual(result.app_version, "1.0.2")
-        self.assertEqual(result.bundle_id, "com.example.test")
-
-    def test_ipa_sign_returns_result_and_removes_scratch(self) -> None:
-        ipa = fixtures.fake_ipa(self.root / "in.ipa")
-        out = self.root / "out.ipa"
-        result = Key(adhoc=True).sign(ipa, out)
-        self.assertTrue(out.is_file())
-        self.assertEqual(result.output_path, str(out))
-        # One bare Mach-O in the tree, then the bundle executable again.
-        self.assertGreaterEqual(result.signed_count, 1)
-        self.assertEqual(result.bundle_id, "com.example.test")
-        self.assertFalse(
-            (self.root / ".ipasign_tmp").exists(), "scratch is removed by default"
-        )
-
-    def test_ipa_requires_output_path(self) -> None:
-        ipa = fixtures.fake_ipa(self.root / "in.ipa")
-        with self.assertRaises(InvalidInputError):
-            Key(adhoc=True).sign(ipa)
-
-    def test_ipa_keep_work_dir(self) -> None:
-        ipa = fixtures.fake_ipa(self.root / "in.ipa")
-        Key(adhoc=True).sign(ipa, self.root / "out.ipa", keep_work_dir=True)
-        self.assertTrue((self.root / ".ipasign_tmp").exists())
-
-    def test_signed_ipa_repacks_into_a_valid_archive(self) -> None:
-        from ipasign import archive
-
-        ipa = fixtures.fake_ipa(self.root / "in.ipa")
-        out = self.root / "out.ipa"
-        Key(adhoc=True).sign(ipa, out)
-        again = archive.unpack(out, self.root / "work")
-        signed = (again.app / "Test").read_bytes()
-        self.assertIsNotNone(macho.MachOFile.parse(signed).slices[0].code_signature)
 
 
 if __name__ == "__main__":
