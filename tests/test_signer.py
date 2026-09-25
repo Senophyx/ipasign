@@ -9,7 +9,8 @@ import unittest
 
 from ipasign import blobs, macho
 from ipasign.errors import BundleError, InvalidInputError, MachOError
-from ipasign.key import Key, SignResult
+from ipasign.key import Key
+from ipasign.result import SignResult
 from ipasign.signer import (
     FileContext,
     Signer,

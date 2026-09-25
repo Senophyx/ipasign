@@ -29,7 +29,8 @@ from .errors import (
     NotEnoughSpaceError,
     ProfileError,
 )
-from .key import Key, SignResult
+from .key import Key
+from .result import SignResult
 
 __version__ = "1.0"
 

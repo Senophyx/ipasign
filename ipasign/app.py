@@ -1,4 +1,4 @@
-"""The :class:`App` facade: name an ``.ipa``, then sign it.
+"""The :class:`App` facade: name what to sign, then sign it.
 
 ``App`` is the shorter path to what :meth:`Key.sign` already does. The only
 thing it adds is a default output path, derived from the input, so the common
@@ -18,7 +18,8 @@ import os
 from pathlib import Path
 
 from .errors import InvalidInputError
-from .key import Key, SignResult
+from .key import Key
+from .result import SignResult
 
 class App:
     """One ``.ipa`` archive, ready to be signed.

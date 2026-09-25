@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import datetime
 import os
-from dataclasses import dataclass
 from pathlib import Path
 
 from . import archive, bundle, macho
 from .credentials import ProvisioningProfile, load_entitlements, load_identity, load_profile
 from .errors import BundleError, InvalidInputError, MachOError
+from .result import SignResult
 from .signer import (
     FileContext,
     Signer,
@@ -23,28 +23,6 @@ from .signer import (
     embedded_info_plist_hash,
     sign_macho_file,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class SignResult:
-    """What a completed signing run produced.
-
-    ``output_path`` is where the artifact actually landed, ``bundle_id`` the
-    identifier sealed into the CodeDirectory, and ``signed_count`` how many
-    Mach-O files were signed.
-
-    ``app_name`` and ``app_version`` describe the app itself, read from the
-    bundle's ``Info.plist``. ``app_version`` is the release version
-    (``CFBundleShortVersionString``), which is what a person recognises, not the
-    build number. Both are empty for a bare Mach-O, which has no ``Info.plist``
-    to read them from.
-    """
-
-    output_path: str
-    bundle_id: str
-    signed_count: int
-    app_name: str = ""
-    app_version: str = ""
 
 
 def _looks_like_macho(path: Path) -> bool:

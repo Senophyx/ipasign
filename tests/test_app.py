@@ -8,7 +8,8 @@ import unittest
 from ipasign import archive, macho
 from ipasign.app import App
 from ipasign.errors import InvalidInputError
-from ipasign.key import Key, SignResult
+from ipasign.key import Key
+from ipasign.result import SignResult
 
 from . import fixtures
 
