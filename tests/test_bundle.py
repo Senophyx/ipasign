@@ -14,18 +14,23 @@ from . import fixtures
 
 class DisplayNameTests(unittest.TestCase):
     def test_prefers_display_name(self) -> None:
-        self.assertEqual(bundle.display_name({"CFBundleDisplayName": "Nexa"}), "Nexa")
+        self.assertEqual(bundle.display_name({"CFBundleDisplayName": "TestApp"}), "TestApp")
 
     def test_falls_back_to_name_then_executable(self) -> None:
-        self.assertEqual(bundle.display_name({"CFBundleName": "Nexa"}), "Nexa")
+        self.assertEqual(bundle.display_name({"CFBundleName": "TestApp"}), "TestApp")
         self.assertEqual(bundle.display_name({"CFBundleExecutable": "Runner"}), "Runner")
 
     def test_display_name_wins_when_several_present(self) -> None:
-        info = {"CFBundleDisplayName": "Nexa", "CFBundleName": "Other", "CFBundleExecutable": "Runner"}
-        self.assertEqual(bundle.display_name(info), "Nexa")
+        info = {
+            "CFBundleDisplayName": "TestApp",
+            "CFBundleName": "Other",
+            "CFBundleExecutable": "Runner",
+        }
+        self.assertEqual(bundle.display_name(info), "TestApp")
 
     def test_empty_value_does_not_stop_the_search(self) -> None:
-        self.assertEqual(bundle.display_name({"CFBundleDisplayName": "", "CFBundleName": "Nexa"}), "Nexa")
+        info = {"CFBundleDisplayName": "", "CFBundleName": "TestApp"}
+        self.assertEqual(bundle.display_name(info), "TestApp")
 
     def test_missing_everything(self) -> None:
         self.assertEqual(bundle.display_name({}), "")
@@ -33,8 +38,8 @@ class DisplayNameTests(unittest.TestCase):
 
 class AppVersionTests(unittest.TestCase):
     def test_release_version_wins_over_build_number(self) -> None:
-        info = {"CFBundleShortVersionString": "1.0.2", "CFBundleVersion": "2"}
-        self.assertEqual(bundle.app_version(info), "1.0.2")
+        info = {"CFBundleShortVersionString": "1.0", "CFBundleVersion": "2"}
+        self.assertEqual(bundle.app_version(info), "1.0")
 
     def test_falls_back_to_build_number(self) -> None:
         self.assertEqual(bundle.app_version({"CFBundleVersion": "2"}), "2")
