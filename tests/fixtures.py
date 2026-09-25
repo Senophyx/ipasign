@@ -1,8 +1,8 @@
 """Synthetic fixtures for the test suite.
 
-Everything here builds its own inputs, so the tests run without the sample IPA
-or the certificate under ``__test/``. Scratch files live under ``tests/.scratch``
-and are removed by the tests that create them.
+Everything here builds its own inputs, so the tests run without any external
+sample. Scratch files live under ``tests/.scratch`` and are removed by the tests
+that create them.
 """
 
 from __future__ import annotations
