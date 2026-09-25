@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`App` facade.** `ipasign.App("input.ipa").sign(key)` signs an archive to a default output
+  named after the input, and returns the same `SignResult` as `Key.sign()`. Pass `output` to
+  name the target explicitly. `Key.sign()` is unchanged.
+
 ## [1.0] - 2026-09-25
 
 First public release. `ipasign` is a pure-Python iOS code signing library that re-signs
