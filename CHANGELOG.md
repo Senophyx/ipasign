@@ -70,10 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a renamed `App("MyApp")` behave exactly as before.
 - **`BundleEdits`** in `ipasign.edit` holds the recorded queue, and `ipasign.edit.apply_edits`
   runs the pass over a bundle root.
-
 - **`App` facade.** `ipasign.App` accepts anything signable: an `.ipa` archive, an `.app`
   bundle folder, a framework, a dylib or a bare Mach-O executable, and dispatches on what it
-  finds. Every call returns a `SignResult`.
+  finds. `sign()` and `modify()` return a `SignResult`; `metadata()` and `check()` return their
+  own result types.
 - **Default output for an archive.** `App("test.ipa").sign(key)` writes `test-signed.ipa`
   beside the input. Pass `output` to name the target explicitly.
 - **`Key.signer()`** exposes the credential-derived `Signer`, for callers working below the
@@ -108,8 +108,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- An output path for a bundle folder or a bare Mach-O is now refused on `App.sign()` the same
-  way it was on `Key.sign()`, rather than accepted and ignored.
+- An output path for a bundle folder is now always refused on `App.sign()`. Previously the
+  folder's own path was accepted, since that is where the bundle is signed anyway, and a bare
+  Mach-O already refused one.
 
 ## [1.0] - 2026-09-25
 
