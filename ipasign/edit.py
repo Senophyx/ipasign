@@ -126,20 +126,22 @@ def _apply_plist_edits(root: Path, info: dict, edits: BundleEdits) -> bool:
         _replace_icon(root, edits.icon, info)
         changed = True
 
-    if edits.bundle_id:
+    if edits.bundle_id and str(info.get("CFBundleIdentifier", "")) != edits.bundle_id:
         old_id = str(info.get("CFBundleIdentifier", ""))
         info["CFBundleIdentifier"] = edits.bundle_id
-        if old_id and old_id != edits.bundle_id:
+        if old_id:
             _rename_plugins(root, old_id, edits.bundle_id)
         changed = True
 
-    if edits.name:
+    if edits.name and (
+        info.get("CFBundleName") != edits.name or info.get("CFBundleDisplayName") != edits.name
+    ):
         info["CFBundleName"] = edits.name
         info["CFBundleDisplayName"] = edits.name
         _rewrite_strings(root, edits.name)
         changed = True
 
-    if edits.version:
+    if edits.version and info.get("CFBundleVersion") != edits.version:
         info["CFBundleVersion"] = edits.version
         info["CFBundleShortVersionString"] = edits.version
         changed = True
@@ -176,7 +178,8 @@ def _rename_plugins(root: Path, old_id: str, new_id: str) -> None:
 
     Only those two kinds are touched, matching the reference: a framework or an
     ``.xctest`` carries no identifier of its own. A plugin whose plist cannot be
-    read is left alone rather than failing the whole run.
+    read is left alone rather than failing the whole run, and one that carries
+    none of the three keys keeps its bytes exactly as they were.
     """
     from .bundle import collect_nested_bundles, read_info_plist
 
@@ -188,22 +191,35 @@ def _rename_plugins(root: Path, old_id: str, new_id: str) -> None:
         except BundleError:
             continue
 
-        if "CFBundleIdentifier" in info:
-            info["CFBundleIdentifier"] = str(info["CFBundleIdentifier"]).replace(old_id, new_id)
+        changed = _replace_plugin_id(info, old_id, new_id)
+        if changed:
+            write_atomic(path / "Info.plist", _plist.dumps(info))
 
-        companion = info.get("WKCompanionAppBundleIdentifier")
-        if isinstance(companion, str):
-            info["WKCompanionAppBundleIdentifier"] = companion.replace(old_id, new_id)
 
-        extension = info.get("NSExtension")
-        if isinstance(extension, dict):
-            attributes = extension.get("NSExtensionAttributes")
-            if isinstance(attributes, dict):
-                watch_id = attributes.get("WKAppBundleIdentifier")
-                if isinstance(watch_id, str):
-                    attributes["WKAppBundleIdentifier"] = watch_id.replace(old_id, new_id)
+def _replace_plugin_id(info: dict, old_id: str, new_id: str) -> bool:
+    """String-replace the identifier in the three keys a plugin may carry."""
+    changed = False
 
-        write_atomic(path / "Info.plist", _plist.dumps(info))
+    identifier = info.get("CFBundleIdentifier")
+    if isinstance(identifier, str):
+        info["CFBundleIdentifier"] = identifier.replace(old_id, new_id)
+        changed = True
+
+    companion = info.get("WKCompanionAppBundleIdentifier")
+    if isinstance(companion, str):
+        info["WKCompanionAppBundleIdentifier"] = companion.replace(old_id, new_id)
+        changed = True
+
+    extension = info.get("NSExtension")
+    if isinstance(extension, dict):
+        attributes = extension.get("NSExtensionAttributes")
+        if isinstance(attributes, dict):
+            watch_id = attributes.get("WKAppBundleIdentifier")
+            if isinstance(watch_id, str):
+                attributes["WKAppBundleIdentifier"] = watch_id.replace(old_id, new_id)
+                changed = True
+
+    return changed
 
 def _rewrite_strings(root: Path, name: str) -> None:
     """Update the localised ``InfoPlist.strings`` files that are present.

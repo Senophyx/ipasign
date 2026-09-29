@@ -69,6 +69,11 @@ class IdentityEditTests(unittest.TestCase):
         apply_edits(self.app, BundleEdits(name=""))
         self.assertEqual((self.app / "Info.plist").read_bytes(), before)
 
+    def test_an_edit_matching_the_current_value_writes_nothing(self) -> None:
+        before = (self.app / "Info.plist").read_bytes()
+        apply_edits(self.app, BundleEdits(bundle_id="com.example.test", version="1"))
+        self.assertEqual((self.app / "Info.plist").read_bytes(), before)
+
     def test_localised_strings_are_rewritten(self) -> None:
         strings = self.app / "zh_CN.lproj"
         strings.mkdir()
@@ -118,6 +123,16 @@ class IdentityEditTests(unittest.TestCase):
         broken.mkdir(parents=True)
         apply_edits(self.app, BundleEdits(bundle_id="com.example.prod"))
         self.assertFalse((broken / "Info.plist").exists())
+
+    def test_a_plugin_with_no_identifier_keeps_its_bytes(self) -> None:
+        plugin = self.app / "PlugIns" / "Bare.appex"
+        plugin.mkdir(parents=True)
+        (plugin / "Info.plist").write_bytes(
+            plistlib.dumps({"CFBundleExecutable": "Bare"}, sort_keys=False)
+        )
+        before = (plugin / "Info.plist").read_bytes()
+        apply_edits(self.app, BundleEdits(bundle_id="com.example.prod"))
+        self.assertEqual((plugin / "Info.plist").read_bytes(), before)
 
 class ToggleEditTests(unittest.TestCase):
     def setUp(self) -> None:
