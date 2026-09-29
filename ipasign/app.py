@@ -54,11 +54,16 @@ def _resolve_bundle(source: Path) -> Path:
     """The bundle to work on, descending into ``source`` when it holds one.
 
     A folder that is already a bundle is used as it is, so a caller who knows
-    the path is never second-guessed. Any other folder is searched, which lets
-    an unzip root or its ``Payload`` be passed directly. Failing here names the
-    folder that held no bundle, instead of failing later on a missing plist.
+    the path is never second-guessed. A bundle is recognised by its name ending
+    in a bundle suffix, or by carrying an ``Info.plist`` of its own, because a
+    caller may have moved or renamed the folder. Any other folder is searched,
+    which lets an unzip root or its ``Payload`` be passed directly. Failing here
+    names the folder that held no bundle, instead of failing later on a missing
+    plist.
     """
-    if not source.is_dir() or source.name.endswith(bundle.BUNDLE_SUFFIXES):
+    if not source.is_dir():
+        return source
+    if source.name.endswith(bundle.BUNDLE_SUFFIXES) or (source / "Info.plist").is_file():
         return source
 
     found = bundle.find_app_folder(source)

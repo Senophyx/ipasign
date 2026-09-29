@@ -433,6 +433,23 @@ class AppFolderDiscoveryTests(unittest.TestCase):
         framework = fixtures.fake_bundle(self.root / "Inner.framework")
         self.assertEqual(App(framework).path, framework)
 
+    def test_a_bundle_folder_without_a_suffix_is_accepted(self) -> None:
+        """A renamed or moved bundle is still a bundle."""
+        app = fixtures.fake_bundle(self.root / "MyApp")
+        self.assertEqual(App(app).path, app)
+
+    def test_a_bundle_folder_without_a_suffix_is_signed(self) -> None:
+        app = fixtures.fake_bundle(self.root / "MyApp")
+        result = App(app).sign(Key(adhoc=True))
+        self.assertEqual(result.output_path, str(app))
+        self.assertGreaterEqual(result.signed_count, 1)
+
+    def test_a_folder_with_a_plist_is_not_scanned_for_a_nested_bundle(self) -> None:
+        """Declaring a plist is declaring the bundle; do not second-guess it."""
+        app = fixtures.fake_bundle(self.root / "Outer")
+        fixtures.fake_bundle(self.root / "Outer" / "Inner.app")
+        self.assertEqual(App(app).path, app)
+
     def test_a_folder_with_no_bundle_is_refused_at_construction(self) -> None:
         (self.root / "empty").mkdir()
         with self.assertRaises(InvalidInputError) as caught:
