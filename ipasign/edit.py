@@ -236,14 +236,12 @@ def _replace_icon(root: Path, icon: Path, info: dict) -> None:
     ``Assets.car`` icon does not win on iOS 11+, and fresh entries are created
     when the plist declares no icon at all.
     """
-    from .metadata import PNG_MAGIC
-
     try:
         data = Path(icon).read_bytes()
     except OSError as exc:
         raise BundleError(f"cannot read the replacement icon {icon}: {exc}") from exc
 
-    if not data.startswith(PNG_MAGIC) or _png_size(data) is None:
+    if _png_size(data) is None:
         raise BundleError(f"the replacement icon is not a PNG file: {icon}")
 
     names = _declared_icon_names(info)
@@ -271,11 +269,16 @@ def _replace_icon(root: Path, icon: Path, info: dict) -> None:
 def _png_size(data: bytes) -> tuple[int, int] | None:
     """(width, height) from the ``IHDR`` chunk, or ``None`` when there is none.
 
-    The chunk is located rather than assumed at offset 12, because Apple's
-    crushed variant puts a ``CgBI`` chunk in front of it. The caller has
-    already checked the file signature.
+    A file that does not start with the PNG signature, or that carries no
+    ``IHDR``, is not a PNG. The chunk is located rather than assumed at offset
+    12, because Apple's crushed variant puts a ``CgBI`` chunk in front of it.
     """
-    pos = 8
+    from .metadata import PNG_MAGIC
+
+    if not data.startswith(PNG_MAGIC):
+        return None
+
+    pos = len(PNG_MAGIC)
     while pos + 12 <= len(data):
         length = int.from_bytes(data[pos : pos + 4], "big")
         if length > len(data) - pos - 12:
@@ -283,9 +286,8 @@ def _png_size(data: bytes) -> tuple[int, int] | None:
         if data[pos + 4 : pos + 8] == b"IHDR":
             if length != 13:
                 return None
-            width, height = int.from_bytes(data[pos + 8 : pos + 12], "big"), int.from_bytes(
-                data[pos + 12 : pos + 16], "big"
-            )
+            width = int.from_bytes(data[pos + 8 : pos + 12], "big")
+            height = int.from_bytes(data[pos + 12 : pos + 16], "big")
             return (width, height) if width and height else None
         pos += 12 + length
     return None

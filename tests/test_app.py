@@ -388,7 +388,8 @@ class AppModifyTests(unittest.TestCase):
         unpacked = archive.unpack(result.output_path, self.root / "read")
         try:
             self.assertFalse((unpacked.app / "embedded.mobileprovision").exists())
-            sealed = plistlib.loads((unpacked.app / "_CodeSignature" / "CodeResources").read_bytes())
+            resources = unpacked.app / "_CodeSignature" / "CodeResources"
+            sealed = plistlib.loads(resources.read_bytes())
             self.assertNotIn("embedded.mobileprovision", sealed["files"])
         finally:
             archive.cleanup(unpacked.root)
