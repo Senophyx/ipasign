@@ -69,10 +69,19 @@ class IdentityEditTests(unittest.TestCase):
         apply_edits(self.app, BundleEdits(name=""))
         self.assertEqual((self.app / "Info.plist").read_bytes(), before)
 
-    def test_an_edit_matching_the_current_value_writes_nothing(self) -> None:
-        before = (self.app / "Info.plist").read_bytes()
-        apply_edits(self.app, BundleEdits(bundle_id="com.example.test", version="1"))
-        self.assertEqual((self.app / "Info.plist").read_bytes(), before)
+    def test_repeating_an_edit_changes_nothing_the_second_time(self) -> None:
+        """A settled plist is byte-identical, so a seal over it stays valid."""
+        apply_edits(self.app, BundleEdits(bundle_id="com.example.prod", name="ProdApp"))
+        settled = (self.app / "Info.plist").read_bytes()
+        apply_edits(self.app, BundleEdits(bundle_id="com.example.prod", name="ProdApp"))
+        self.assertEqual((self.app / "Info.plist").read_bytes(), settled)
+
+    def test_a_version_edit_sets_both_keys(self) -> None:
+        """Even when only one of the two already matches."""
+        apply_edits(self.app, BundleEdits(version="1.0"))
+        info = _info(self.app)
+        self.assertEqual(info["CFBundleVersion"], "1.0")
+        self.assertEqual(info["CFBundleShortVersionString"], "1.0")
 
     def test_localised_strings_are_rewritten(self) -> None:
         strings = self.app / "zh_CN.lproj"

@@ -64,10 +64,10 @@ class BundleEdits:
 def apply_edits(root: Path, edits: BundleEdits) -> None:
     """Apply every recorded edit to the bundle at ``root``.
 
-    Folder deletions run first, then the ``Info.plist`` edits, which are written
-    back once so the plist keeps its original key order. The file is only
-    rewritten when a requested edit actually applies, so a request that turns
-    out to be a no-op leaves the bytes, and any seal over them, untouched.
+    Folder deletions run first, then the ``Info.plist`` edits. The plist is
+    rewritten only when its serialised bytes actually differ from the file, so
+    a request that turns out to be a no-op leaves the file, and any seal over
+    it, exactly as it was.
     """
     if edits.empty:
         return
@@ -79,17 +79,27 @@ def apply_edits(root: Path, edits: BundleEdits) -> None:
     if edits.drop_provision:
         _drop_provision(root)
 
-    if not _edits_info_plist(edits):
+    if not _touches_plist(edits):
         return
 
-    from .bundle import read_info_plist
+    from .bundle import parse_info_plist
 
-    info = read_info_plist(root)
-    if _apply_plist_edits(root, info, edits):
-        write_atomic(root / "Info.plist", _plist.dumps(info))
+    plist_path = root / "Info.plist"
+    raw = plist_path.read_bytes()
+    info = parse_info_plist(raw)
+    _apply_plist_edits(root, info, edits)
 
-def _edits_info_plist(edits: BundleEdits) -> bool:
-    """Whether any recorded edit touches ``Info.plist``."""
+    updated = _plist.dumps(info)
+    if updated != raw:
+        write_atomic(plist_path, updated)
+
+def _touches_plist(edits: BundleEdits) -> bool:
+    """Whether any recorded edit needs ``Info.plist`` at all.
+
+    A folder deletion alone must not read or rewrite the plist, or a bundle
+    whose plist is in the binary format would get it converted to XML for no
+    reason.
+    """
     return bool(
         edits.bundle_id
         or edits.name
@@ -100,53 +110,40 @@ def _edits_info_plist(edits: BundleEdits) -> bool:
         or edits.drop_supported_devices
     )
 
-def _apply_plist_edits(root: Path, info: dict, edits: BundleEdits) -> bool:
-    """Mutate ``info`` in place and report whether it must be written back.
+def _apply_plist_edits(root: Path, info: dict, edits: BundleEdits) -> None:
+    """Mutate ``info`` in place with every recorded plist edit.
 
     The order is the reference's: toggles, then the icon, then the identity
     keys. New keys are appended in insertion order, so the order decides where
     they land in the written plist.
     """
-    changed = False
-
     if edits.documents:
         info["UISupportsDocumentBrowser"] = True
         info["UIFileSharingEnabled"] = True
-        changed = True
 
     if edits.minimum_os:
         info["MinimumOSVersion"] = edits.minimum_os
-        changed = True
 
-    if edits.drop_supported_devices and "UISupportedDevices" in info:
-        del info["UISupportedDevices"]
-        changed = True
+    if edits.drop_supported_devices:
+        info.pop("UISupportedDevices", None)
 
     if edits.icon is not None:
         _replace_icon(root, edits.icon, info)
-        changed = True
 
-    if edits.bundle_id and str(info.get("CFBundleIdentifier", "")) != edits.bundle_id:
+    if edits.bundle_id:
         old_id = str(info.get("CFBundleIdentifier", ""))
         info["CFBundleIdentifier"] = edits.bundle_id
-        if old_id:
+        if old_id and old_id != edits.bundle_id:
             _rename_plugins(root, old_id, edits.bundle_id)
-        changed = True
 
-    if edits.name and (
-        info.get("CFBundleName") != edits.name or info.get("CFBundleDisplayName") != edits.name
-    ):
+    if edits.name:
         info["CFBundleName"] = edits.name
         info["CFBundleDisplayName"] = edits.name
         _rewrite_strings(root, edits.name)
-        changed = True
 
-    if edits.version and info.get("CFBundleVersion") != edits.version:
+    if edits.version:
         info["CFBundleVersion"] = edits.version
         info["CFBundleShortVersionString"] = edits.version
-        changed = True
-
-    return changed
 
 def _drop_folders(root: Path, names: tuple[str, ...]) -> None:
     """Delete the named root-level folders that exist."""
@@ -192,23 +189,32 @@ def _rename_plugins(root: Path, old_id: str, new_id: str) -> None:
             continue
 
         changed = _replace_plugin_id(info, old_id, new_id)
-        if changed:
-            write_atomic(path / "Info.plist", _plist.dumps(info))
+        if not changed:
+            continue
+        updated = _plist.dumps(info)
+        if updated != (path / "Info.plist").read_bytes():
+            write_atomic(path / "Info.plist", updated)
 
 
 def _replace_plugin_id(info: dict, old_id: str, new_id: str) -> bool:
-    """String-replace the identifier in the three keys a plugin may carry."""
+    """String-replace the identifier in the three keys a plugin may carry.
+
+    Returns whether any of them actually changed, so a plugin that carries the
+    identifier under a key we do not know is left untouched.
+    """
     changed = False
 
     identifier = info.get("CFBundleIdentifier")
     if isinstance(identifier, str):
-        info["CFBundleIdentifier"] = identifier.replace(old_id, new_id)
-        changed = True
+        replaced = identifier.replace(old_id, new_id)
+        info["CFBundleIdentifier"] = replaced
+        changed = changed or replaced != identifier
 
     companion = info.get("WKCompanionAppBundleIdentifier")
     if isinstance(companion, str):
-        info["WKCompanionAppBundleIdentifier"] = companion.replace(old_id, new_id)
-        changed = True
+        replaced = companion.replace(old_id, new_id)
+        info["WKCompanionAppBundleIdentifier"] = replaced
+        changed = changed or replaced != companion
 
     extension = info.get("NSExtension")
     if isinstance(extension, dict):
@@ -216,8 +222,9 @@ def _replace_plugin_id(info: dict, old_id: str, new_id: str) -> bool:
         if isinstance(attributes, dict):
             watch_id = attributes.get("WKAppBundleIdentifier")
             if isinstance(watch_id, str):
-                attributes["WKAppBundleIdentifier"] = watch_id.replace(old_id, new_id)
-                changed = True
+                replaced = watch_id.replace(old_id, new_id)
+                attributes["WKAppBundleIdentifier"] = replaced
+                changed = changed or replaced != watch_id
 
     return changed
 
@@ -243,7 +250,9 @@ def _rewrite_strings(root: Path, name: str) -> None:
 
         strings["CFBundleName"] = name
         strings["CFBundleDisplayName"] = name
-        write_atomic(path, _plist.dumps(strings))
+        updated = _plist.dumps(strings)
+        if updated != raw:
+            write_atomic(path, updated)
 
 def _replace_icon(root: Path, icon: Path, info: dict) -> None:
     """Overwrite every bundle-root PNG the declared icon names cover.
