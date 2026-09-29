@@ -401,6 +401,74 @@ class AppModifyTests(unittest.TestCase):
         self.assertEqual(self._info(Path(result.output_path))["CFBundleVersion"], "2.3.4")
 
 
+class AppFolderDiscoveryTests(unittest.TestCase):
+    """A folder that holds a bundle is resolved to the bundle inside it."""
+
+    def setUp(self) -> None:
+        self.root = fixtures.scratch_dir("app_discovery")
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_a_folder_holding_a_bundle_resolves_to_it(self) -> None:
+        app = fixtures.fake_bundle(self.root / "Runner.app")
+        self.assertEqual(App(self.root).path, app)
+
+    def test_a_bundle_in_a_subfolder_is_found(self) -> None:
+        app = fixtures.fake_bundle(self.root / "Payload" / "Runner.app")
+        self.assertEqual(App(self.root).path, app)
+
+    def test_a_payload_folder_resolves_too(self) -> None:
+        """The common case: an unzip output, or its Payload."""
+        app = fixtures.fake_bundle(self.root / "Payload" / "Runner.app")
+        self.assertEqual(App(self.root / "Payload").path, app)
+
+    def test_a_bundle_is_used_as_it_is_and_never_scanned(self) -> None:
+        """A nested bundle must not hijack a caller who named the outer one."""
+        app = fixtures.fake_bundle(self.root / "Runner.app")
+        fixtures.fake_bundle(self.root / "Runner.app" / "PlugIns" / "Widget.appex")
+        self.assertEqual(App(app).path, app)
+
+    def test_a_framework_folder_is_used_as_it_is(self) -> None:
+        framework = fixtures.fake_bundle(self.root / "Inner.framework")
+        self.assertEqual(App(framework).path, framework)
+
+    def test_a_folder_with_no_bundle_is_refused_at_construction(self) -> None:
+        (self.root / "empty").mkdir()
+        with self.assertRaises(InvalidInputError) as caught:
+            App(self.root)
+        self.assertIn(str(self.root), str(caught.exception))
+
+    def test_the_found_bundle_is_the_one_that_gets_signed(self) -> None:
+        app = fixtures.fake_bundle(self.root / "Payload" / "Runner.app")
+        result = App(self.root).sign(Key(adhoc=True))
+        self.assertEqual(result.output_path, str(app))
+        self.assertEqual(result.bundle_id, "com.example.test")
+        signed = (app / "Test").read_bytes()
+        self.assertIsNotNone(macho.MachOFile.parse(signed).slices[0].code_signature)
+
+    def test_an_archive_is_still_unpacked_by_the_library(self) -> None:
+        """Discovery only ever applies to a folder the caller hands over."""
+        ipa = fixtures.fake_ipa(self.root / "test.ipa")
+        result = App(ipa).sign(Key(adhoc=True))
+        self.assertEqual(result.output_path, str(self.root / "test-signed.ipa"))
+
+    def test_construction_still_unpacks_nothing(self) -> None:
+        fixtures.fake_bundle(self.root / "Payload" / "Runner.app")
+        ipa = fixtures.fake_ipa(self.root / "test.ipa")
+        before = ipa.read_bytes()
+        App(self.root)
+        self.assertEqual(ipa.read_bytes(), before)
+        self.assertFalse((self.root / ".ipasign_tmp").exists())
+
+    def test_metadata_and_edits_work_through_the_resolved_bundle(self) -> None:
+        app = fixtures.fake_bundle(self.root / "Payload" / "Runner.app")
+        found = App(self.root).metadata()
+        self.assertEqual(found.bundle_identifier, "com.example.test")
+        result = App(self.root).set_version("2.3.4").modify()
+        self.assertEqual(result.output_path, str(app))
+        self.assertEqual(bundle.read_info_plist(app)["CFBundleVersion"], "2.3.4")
+
 class AppCheckTests(unittest.TestCase):
     """App.check reads the certificate without signing."""
 

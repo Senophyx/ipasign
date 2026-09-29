@@ -199,6 +199,62 @@ class CollectTests(unittest.TestCase):
         self.assertEqual(found[0].name, "Inner.framework")
         self.assertNotIn(self.app.resolve(), [p.resolve() for p in found])
 
+class FindAppFolderTests(unittest.TestCase):
+    """Locating the bundle inside a folder the caller points at."""
+
+    def setUp(self) -> None:
+        self.root = fixtures.scratch_dir("find_app_folder")
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_a_bundle_in_a_subfolder_is_found(self) -> None:
+        app = fixtures.fake_bundle(self.root / "Payload" / "Runner.app")
+        self.assertEqual(bundle.find_app_folder(self.root), app)
+
+    def test_a_folder_with_no_bundle_yields_nothing(self) -> None:
+        (self.root / "empty").mkdir()
+        (self.root / "notes.txt").write_text("hello")
+        self.assertIsNone(bundle.find_app_folder(self.root))
+
+    def test_the_search_goes_all_the_way_down(self) -> None:
+        app = fixtures.fake_bundle(self.root / "some" / "inner" / "Runner.app")
+        self.assertEqual(bundle.find_app_folder(self.root), app)
+
+    def test_an_appex_is_accepted(self) -> None:
+        plugin = fixtures.fake_bundle(self.root / "PlugIns" / "Widget.appex")
+        self.assertEqual(bundle.find_app_folder(self.root), plugin)
+
+    def test_macosx_is_skipped(self) -> None:
+        app = fixtures.fake_bundle(self.root / "Payload" / "Runner.app")
+        fixtures.fake_bundle(self.root / "__MACOSX" / "Decoy.app")
+        self.assertEqual(bundle.find_app_folder(self.root), app)
+
+    def test_two_candidates_resolve_deterministically(self) -> None:
+        """Sorted order, not readdir order, so the answer never moves."""
+        first = fixtures.fake_bundle(self.root / "aaa" / "Alpha.app")
+        fixtures.fake_bundle(self.root / "zzz" / "Zeta.app")
+        self.assertEqual(bundle.find_app_folder(self.root), first)
+        self.assertEqual(bundle.find_app_folder(self.root), first, "stable across runs")
+
+    def test_a_framework_is_not_a_candidate(self) -> None:
+        """Only an app bundle is searched for; a framework is signed where it is."""
+        fixtures.fake_bundle(self.root / "Frameworks" / "Inner.framework")
+        self.assertIsNone(bundle.find_app_folder(self.root))
+
+    def test_a_symlinked_folder_is_not_descended_into(self) -> None:
+        app = fixtures.fake_bundle(self.root / "Runner.app")
+        try:
+            (self.root / "loop").symlink_to(self.root, target_is_directory=True)
+        except OSError:
+            self.skipTest("symlinks are not available here")
+        self.assertEqual(bundle.find_app_folder(self.root), app)
+
+    def test_finding_touches_nothing(self) -> None:
+        app = fixtures.fake_bundle(self.root / "Payload" / "Runner.app")
+        before = (app / "Info.plist").read_bytes()
+        bundle.find_app_folder(self.root)
+        self.assertEqual((app / "Info.plist").read_bytes(), before)
 
 if __name__ == "__main__":
     unittest.main()
