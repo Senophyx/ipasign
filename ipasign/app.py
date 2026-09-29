@@ -13,6 +13,13 @@ An ``.ipa`` is unpacked, signed and repacked, so it gets a default output named
 after the input. A bundle folder and a bare Mach-O are signed where they are,
 so ``output`` is refused for them rather than accepted and ignored.
 
+Editing is a separate verb. The ``set_*`` and ``remove_*`` methods record an
+edit, and :meth:`App.modify` or :meth:`App.sign` applies the recorded queue in
+one pass before the seal:
+
+    ipasign.App("test.ipa").set_name("ProdApp").modify()
+    ipasign.App("test.ipa").set_name("ProdApp").sign(key)
+
 Every call returns a :class:`~ipasign.result.SignResult`. :meth:`App.metadata`
 reads the same input without signing it.
 """
@@ -22,7 +29,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from . import archive, bundle, macho, metadata
+from . import archive, bundle, edit, macho, metadata
 from . import check as _check
 from .check import CertCheckResult
 from .errors import BundleError, InvalidInputError, MachOError
@@ -57,6 +64,7 @@ class App:
         if not (source.is_dir() or source.suffix.lower() == ".ipa" or _looks_like_macho(source)):
             raise InvalidInputError(f"do not know how to sign: {source}")
         self.path = source
+        self._edits = edit.BundleEdits()
 
     @property
     def is_archive(self) -> bool:
@@ -71,6 +79,148 @@ class App:
         already ends in ``-signed`` simply gains another suffix.
         """
         return self.path.with_name(f"{self.path.stem}-signed{self.path.suffix}")
+
+    def set_bundle_id(self, bundle_id: str) -> App:
+        """Record a new ``CFBundleIdentifier``.
+
+        For a bundle, the root plist is rewritten and every nested ``.app`` and
+        ``.appex`` gets the old identifier string-replaced with the new one in
+        ``CFBundleIdentifier``, ``WKCompanionAppBundleIdentifier`` and
+        ``NSExtension.NSExtensionAttributes.WKAppBundleIdentifier``. A bare
+        Mach-O has no plist, so the value is the identifier sealed into the
+        CodeDirectory; a ``bundle_id`` passed to :meth:`sign` wins over it.
+        """
+        self._edits.bundle_id = bundle_id
+        return self
+
+    def set_name(self, name: str) -> App:
+        """Record a new ``CFBundleName`` and ``CFBundleDisplayName``.
+
+        The localised ``zh_CN.lproj/InfoPlist.strings`` and
+        ``zh-Hans.lproj/InfoPlist.strings`` files are rewritten too when they
+        exist. The bundle's folder name is never changed.
+        """
+        self._require_bundle()
+        self._edits.name = name
+        return self
+
+    def set_version(self, version: str) -> App:
+        """Record a new ``CFBundleVersion`` and ``CFBundleShortVersionString``."""
+        self._require_bundle()
+        self._edits.version = version
+        return self
+
+    def set_icon(self, path: str | os.PathLike) -> App:
+        """Record a replacement app icon, a PNG file.
+
+        Every bundle-root PNG the plist's declared icon names cover is
+        overwritten, and ``CFBundleIconName`` is dropped under ``CFBundleIcons``
+        and ``CFBundleIcons~ipad`` so the ``Assets.car`` icon does not win on
+        iOS 11+.
+        """
+        self._require_bundle()
+        self._edits.icon = Path(path)
+        return self
+
+    def enable_documents(self) -> App:
+        """Record ``UISupportsDocumentBrowser`` and ``UIFileSharingEnabled`` as true."""
+        self._require_bundle()
+        self._edits.documents = True
+        return self
+
+    def set_minimum_os(self, version: str) -> App:
+        """Record a new ``MinimumOSVersion``."""
+        self._require_bundle()
+        self._edits.minimum_os = version
+        return self
+
+    def remove_supported_devices(self) -> App:
+        """Record dropping the ``UISupportedDevices`` array from the plist."""
+        self._require_bundle()
+        self._edits.drop_supported_devices = True
+        return self
+
+    def remove_extensions(self) -> App:
+        """Record deleting ``PlugIns/`` and ``Extensions/``."""
+        self._require_bundle()
+        self._edits.drop_extensions = True
+        return self
+
+    def remove_watch_app(self) -> App:
+        """Record deleting ``Watch/``, ``WatchKit/`` and ``com.apple.WatchPlaceholder/``."""
+        self._require_bundle()
+        self._edits.drop_watch = True
+        return self
+
+    def remove_provision(self) -> App:
+        """Record leaving ``embedded.mobileprovision`` out of the output.
+
+        The file is deleted before ``CodeResources`` is generated, so it never
+        enters the seal, and a run that writes no profile simply has nothing to
+        delete.
+        """
+        self._require_bundle()
+        self._edits.drop_provision = True
+        return self
+
+    def modify(
+        self,
+        output: str | os.PathLike | None = None,
+        *,
+        keep_work_dir: bool = False,
+        tmp_folder: str | os.PathLike | None = None,
+    ) -> SignResult:
+        """Apply the recorded edits without signing, and report where they landed.
+
+        An archive is unpacked, edited and repacked. With no ``output`` it is
+        rewritten in place, so a caller who wants to keep the original must
+        name a target. A bundle folder is edited where it is, and ``output`` is
+        refused for it. A bare Mach-O has no bundle to edit and raises.
+
+        The edits change ``Info.plist``, the icon and possibly ``CodeResources``,
+        so an existing signature goes stale. This does not repair it: sign the
+        result again with :meth:`sign`.
+        """
+        self._require_bundle()
+
+        if self.path.is_dir():
+            if output is not None:
+                raise InvalidInputError(
+                    "a bundle is edited in place; move the folder first if you want a copy"
+                )
+            edit.apply_edits(self.path, self._edits)
+            return self._edit_result(self.path, self.path)
+
+        target = Path(output) if output is not None else self.path
+        work = Path(tmp_folder) if tmp_folder is not None else None
+        keep = keep_work_dir or tmp_folder is not None
+
+        unpacked = archive.unpack(self.path, work)
+        try:
+            edit.apply_edits(unpacked.app, self._edits)
+            archive.pack(unpacked.root, target)
+            return self._edit_result(unpacked.app, target)
+        finally:
+            if not keep:
+                archive.cleanup(unpacked.root)
+
+    def _require_bundle(self) -> None:
+        """Reject an edit that needs a bundle when the input is a bare Mach-O."""
+        if self.path.is_dir() or self.is_archive:
+            return
+        raise BundleError(f"a bare Mach-O has no bundle to edit: {self.path}")
+
+    @staticmethod
+    def _edit_result(app_root: Path, output: Path) -> SignResult:
+        """The report for a :meth:`modify` run, which signs nothing."""
+        info = bundle.read_info_plist(app_root)
+        return SignResult(
+            output_path=str(output),
+            bundle_id=str(info.get("CFBundleIdentifier", "")),
+            signed_count=0,
+            app_name=bundle.display_name(info),
+            app_version=bundle.app_version(info),
+        )
 
     def sign(
         self,
@@ -90,6 +240,9 @@ class App:
         ``bundle_id`` names the identifier to seal for a bare Mach-O, which has
         no bundle to read one from. Bundles keep the identifier in their own
         ``Info.plist``.
+
+        Edits recorded with the ``set_*`` and ``remove_*`` methods are applied
+        before the seal, so :meth:`sign` both edits and signs.
         """
         if self.path.is_dir():
             return self._sign_folder(key, output)
@@ -176,7 +329,9 @@ class App:
 
         unpacked = archive.unpack(self.path, work)
         try:
-            result = bundle.sign_bundle(key.signer(), unpacked.app, key.profile)
+            result = bundle.sign_bundle(
+                key.signer(), unpacked.app, key.profile, edits=self._edits
+            )
             archive.pack(unpacked.root, target)
             return SignResult(
                 output_path=str(target),
@@ -194,7 +349,7 @@ class App:
             raise InvalidInputError(
                 "a bundle is signed in place; move the folder first if you want a copy"
             )
-        result = bundle.sign_bundle(key.signer(), self.path, key.profile)
+        result = bundle.sign_bundle(key.signer(), self.path, key.profile, edits=self._edits)
         return SignResult(
             output_path=str(self.path),
             bundle_id=result.bundle_id,
@@ -220,7 +375,7 @@ class App:
             raise MachOError(f"cannot read {self.path}: {exc}") from exc
 
         slc = macho.MachOFile.parse(data).slices[0]
-        resolved_id = bundle_id or bundle_id_fallback(slc, self.path)
+        resolved_id = bundle_id or self._edits.bundle_id or bundle_id_fallback(slc, self.path)
         ctx = FileContext(
             bundle_id=resolved_id,
             info_plist_hash=embedded_info_plist_hash(slc),

@@ -14,7 +14,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import _plist
+from . import _plist, edit
 from .credentials import ProvisioningProfile
 from .errors import BundleError
 from .signer import FileContext, Signer, sign_macho_file, write_atomic
@@ -233,14 +233,24 @@ def sign_bundle(
     signer: Signer,
     root: Path,
     profile: ProvisioningProfile | None = None,
+    edits: edit.BundleEdits | None = None,
 ) -> BundleResult:
-    """Sign an app bundle tree in place, deepest bundle first."""
+    """Sign an app bundle tree in place, deepest bundle first.
+
+    ``edits`` are applied once, after the profile lands and before any seal is
+    generated, so an edited file is always covered by the ``CodeResources``
+    that follows it. A recorded edit that deletes a folder therefore removes it
+    from the traversal too.
+    """
     root = Path(root).resolve()
     if not root.is_dir():
         raise BundleError(f"not a directory: {root}")
 
     if profile is not None and profile.data:
         write_atomic(root / "embedded.mobileprovision", profile.data)
+
+    if edits is not None:
+        edit.apply_edits(root, edits)
 
     signed = 0
     for path in collect_macho_files(root):
