@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import plistlib
 import shutil
 import unittest
+from pathlib import Path
 
-from ipasign import archive, macho
+from ipasign import archive, bundle, macho
 from ipasign.app import App
-from ipasign.errors import ArchiveError, InvalidInputError
+from ipasign.errors import ArchiveError, BundleError, InvalidInputError
 from ipasign.key import Key
 from ipasign.result import SignResult
 
@@ -261,6 +263,142 @@ class AppMachoTests(unittest.TestCase):
         self.assertEqual(result.bundle_id, "com.example.embedded")
         self.assertEqual(result.app_name, "TestApp")
         self.assertEqual(result.app_version, "2.3.4")
+
+class AppModifyTests(unittest.TestCase):
+    """modify() applies the recorded edits and signs nothing."""
+
+    def setUp(self) -> None:
+        self.root = fixtures.scratch_dir("app_modify")
+        self.ipa = fixtures.fake_ipa(self.root / "test.ipa")
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    @staticmethod
+    def _info(path) -> dict:
+        unpacked = archive.unpack(path, path.parent / "read")
+        try:
+            return bundle.read_info_plist(unpacked.app)
+        finally:
+            archive.cleanup(unpacked.root)
+
+    def test_edits_are_recorded_until_modify_runs(self) -> None:
+        app = App(self.ipa).set_name("ProdApp")
+        self.assertEqual(self._info(self.ipa)["CFBundleName"], "Test", "nothing written yet")
+        app.modify(output=self.root / "out.ipa")
+        self.assertEqual(self._info(self.root / "out.ipa")["CFBundleName"], "ProdApp")
+
+    def test_an_archive_is_rewritten_in_place_by_default(self) -> None:
+        result = App(self.ipa).set_version("2.3.4").modify()
+        self.assertEqual(result.output_path, str(self.ipa))
+        self.assertEqual(self._info(self.ipa)["CFBundleVersion"], "2.3.4")
+
+    def test_an_explicit_output_keeps_the_input(self) -> None:
+        before = self.ipa.read_bytes()
+        App(self.ipa).set_version("2.3.4").modify(output=self.root / "out.ipa")
+        self.assertEqual(self.ipa.read_bytes(), before)
+
+    def test_the_result_reports_the_edited_bundle(self) -> None:
+        result = (
+            App(self.ipa)
+            .set_bundle_id("com.example.prod")
+            .set_name("ProdApp")
+            .set_version("2.3.4")
+            .modify(output=self.root / "out.ipa")
+        )
+        self.assertIsInstance(result, SignResult)
+        self.assertEqual(result.bundle_id, "com.example.prod")
+        self.assertEqual(result.app_name, "ProdApp")
+        self.assertEqual(result.app_version, "2.3.4")
+        self.assertEqual(result.signed_count, 0, "modify never signs")
+
+    def test_scratch_is_removed(self) -> None:
+        App(self.ipa).set_version("2.3.4").modify(output=self.root / "out.ipa")
+        self.assertFalse((self.root / ".ipasign_tmp").exists())
+
+    def test_a_bundle_folder_is_edited_where_it_is(self) -> None:
+        app = fixtures.fake_bundle(self.root / "Test.app")
+        result = App(app).set_name("ProdApp").modify()
+        self.assertEqual(result.output_path, str(app))
+        self.assertEqual(bundle.read_info_plist(app)["CFBundleName"], "ProdApp")
+
+    def test_an_output_path_for_a_folder_is_refused(self) -> None:
+        app = fixtures.fake_bundle(self.root / "Test.app")
+        with self.assertRaises(InvalidInputError):
+            App(app).set_name("ProdApp").modify(output=self.root / "out.app")
+
+    def test_a_bare_macho_raises(self) -> None:
+        runner = self.root / "Runner"
+        runner.write_bytes(fixtures.minimal_macho())
+        with self.assertRaises(BundleError):
+            App(runner).modify()
+
+    def test_an_edit_that_needs_a_bundle_raises_at_call_time(self) -> None:
+        runner = self.root / "Runner"
+        runner.write_bytes(fixtures.minimal_macho())
+        for record in (
+            lambda app: app.set_name("ProdApp"),
+            lambda app: app.set_version("2.0"),
+            lambda app: app.set_icon(self.root / "icon.png"),
+            lambda app: app.enable_documents(),
+            lambda app: app.set_minimum_os("15.0"),
+            lambda app: app.remove_supported_devices(),
+            lambda app: app.remove_extensions(),
+            lambda app: app.remove_watch_app(),
+            lambda app: app.remove_provision(),
+        ):
+            with self.assertRaises(BundleError):
+                record(App(runner))
+
+    def test_a_bare_macho_accepts_a_bundle_id(self) -> None:
+        """It has no plist, so the value is the sealed identifier instead."""
+        runner = self.root / "Runner"
+        runner.write_bytes(fixtures.minimal_macho())
+        result = App(runner).set_bundle_id("com.example.prod").sign(Key(adhoc=True))
+        self.assertEqual(result.bundle_id, "com.example.prod")
+
+    def test_sign_applies_recorded_edits(self) -> None:
+        result = App(self.ipa).set_name("ProdApp").set_version("2.3.4").sign(Key(adhoc=True))
+        self.assertEqual(result.app_name, "ProdApp")
+        self.assertEqual(result.app_version, "2.3.4")
+        self.assertEqual(self._info(Path(result.output_path))["CFBundleName"], "ProdApp")
+
+    def test_the_sign_argument_wins_over_the_recorded_id(self) -> None:
+        runner = self.root / "Runner"
+        runner.write_bytes(fixtures.minimal_macho())
+        result = (
+            App(runner)
+            .set_bundle_id("com.example.recorded")
+            .sign(Key(adhoc=True), bundle_id="com.example.argument")
+        )
+        self.assertEqual(result.bundle_id, "com.example.argument")
+
+    def test_chaining_returns_the_same_app(self) -> None:
+        app = App(self.ipa)
+        self.assertIs(app.set_name("ProdApp"), app)
+        self.assertIs(app.set_version("2.0"), app)
+        self.assertIs(app.set_bundle_id("com.example.prod"), app)
+        self.assertIs(app.enable_documents(), app)
+
+    def test_remove_provision_leaves_the_file_out_of_the_output(self) -> None:
+        key = Key(adhoc=True)
+        key.profile = fixtures.profile_object()
+        result = App(self.ipa).remove_provision().sign(key)
+
+        unpacked = archive.unpack(result.output_path, self.root / "read")
+        try:
+            self.assertFalse((unpacked.app / "embedded.mobileprovision").exists())
+            sealed = plistlib.loads((unpacked.app / "_CodeSignature" / "CodeResources").read_bytes())
+            self.assertNotIn("embedded.mobileprovision", sealed["files"])
+        finally:
+            archive.cleanup(unpacked.root)
+
+    def test_a_signed_archive_can_be_edited_again(self) -> None:
+        """The old seal goes stale, which is documented, not blocked."""
+        first = App(self.ipa).sign(Key(adhoc=True))
+        result = App(first.output_path).set_version("2.3.4").modify(output=self.root / "out.ipa")
+        self.assertEqual(self._info(Path(result.output_path))["CFBundleVersion"], "2.3.4")
+
 
 class AppCheckTests(unittest.TestCase):
     """App.check reads the certificate without signing."""

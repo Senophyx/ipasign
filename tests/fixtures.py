@@ -326,6 +326,29 @@ def adhoc_key():
 
     return Key(adhoc=True)
 
+def profile_object(
+    *,
+    team_id: str = "TEAM123456",
+    app_id: str = "TEAM123456.com.example.test",
+    entitlements: dict | None = None,
+    data: bytes = b"profile",
+):
+    """A :class:`ProvisioningProfile` without the CMS wrapper around it.
+
+    For tests that need a profile object in hand rather than a file to load.
+    """
+    from ipasign.credentials import ProvisioningProfile
+
+    if entitlements is None:
+        entitlements = {"application-identifier": app_id, "get-task-allow": False}
+    return ProvisioningProfile(
+        data=data,
+        entitlements=entitlements,
+        entitlements_plist=plistlib.dumps(entitlements, fmt=plistlib.FMT_XML, sort_keys=False),
+        team_id=team_id,
+        application_id=app_id,
+    )
+
 def test_code_directory(size: int = 256) -> bytes:
     """A stand-in CodeDirectory blob, enough for CMS tests to hash."""
     import struct as _struct
