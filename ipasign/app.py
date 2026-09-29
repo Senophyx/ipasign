@@ -50,11 +50,30 @@ def _looks_like_macho(path: Path) -> bool:
     except OSError:
         return False
 
+def _resolve_bundle(source: Path) -> Path:
+    """The bundle to work on, descending into ``source`` when it holds one.
+
+    A folder that is already a bundle is used as it is, so a caller who knows
+    the path is never second-guessed. Any other folder is searched, which lets
+    an unzip root or its ``Payload`` be passed directly. Failing here names the
+    folder that held no bundle, instead of failing later on a missing plist.
+    """
+    if not source.is_dir() or source.name.endswith(bundle.BUNDLE_SUFFIXES):
+        return source
+
+    found = bundle.find_app_folder(source)
+    if found is None:
+        raise InvalidInputError(f"no app bundle found in: {source}")
+    return found
+
 class App:
     """Something signable: an ``.ipa``, a bundle folder, or a bare Mach-O.
 
     The input is validated here. An archive is unpacked later, when :meth:`sign`
-    runs, so constructing an ``App`` never touches the file.
+    runs, so constructing an ``App`` never touches the file. A folder that is
+    not itself a bundle is searched for the ``.app``/``.appex`` inside it, so
+    an unzip root or its ``Payload`` can be passed directly; :attr:`path`
+    reports the bundle that was found.
     """
 
     def __init__(self, path: str | os.PathLike) -> None:
@@ -63,7 +82,7 @@ class App:
             raise InvalidInputError(f"input does not exist: {source}")
         if not (source.is_dir() or source.suffix.lower() == ".ipa" or _looks_like_macho(source)):
             raise InvalidInputError(f"do not know how to sign: {source}")
-        self.path = source
+        self.path = _resolve_bundle(source)
         self._edits = edit.BundleEdits()
 
     @property

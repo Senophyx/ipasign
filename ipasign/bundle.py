@@ -20,6 +20,9 @@ from .errors import BundleError
 from .signer import FileContext, Signer, sign_macho_file, write_atomic
 
 BUNDLE_SUFFIXES = (".app", ".appex", ".framework", ".xctest")
+# Discovery looks for an app bundle only: a framework or an xctest is signed
+# where it is, never searched for.
+APP_SUFFIXES = (".app", ".appex")
 CODE_RESOURCES = "_CodeSignature/CodeResources"
 
 MACHO_MAGICS = (
@@ -126,6 +129,26 @@ def collect_nested_bundles(root: Path) -> list[Path]:
     found.sort(key=lambda path: len(path.relative_to(root).parts), reverse=True)
     return found
 
+
+def find_app_folder(folder: Path) -> Path | None:
+    """The first ``.app`` or ``.appex`` inside ``folder``, or ``None``.
+
+    A caller who unpacks an archive by hand should not have to know where the
+    bundle landed, so the whole tree is searched. Entries are visited in sorted
+    order rather than the order the filesystem happens to return them, so the
+    same tree always resolves to the same bundle. ``__MACOSX`` is zip metadata,
+    not app content, and is skipped, and a symlinked directory is never
+    descended into, so a loop in the tree cannot run away.
+    """
+    for entry in sorted(folder.iterdir()):
+        if not entry.is_dir() or entry.is_symlink() or entry.name == "__MACOSX":
+            continue
+        if entry.name.endswith(APP_SUFFIXES):
+            return entry
+        found = find_app_folder(entry)
+        if found is not None:
+            return found
+    return None
 
 def _file_digests(path: Path) -> tuple[bytes, bytes]:
     sha1 = hashlib.sha1()
@@ -283,6 +306,7 @@ __all__ = [
     "collect_macho_files",
     "collect_nested_bundles",
     "display_name",
+    "find_app_folder",
     "generate_code_resources",
     "is_macho_file",
     "parse_info_plist",
