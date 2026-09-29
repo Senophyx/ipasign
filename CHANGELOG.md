@@ -64,9 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `App("unzipped/Payload/Runner.app")` all resolve to the same bundle, and `App.path` reports
   which one. Candidates are visited in sorted order, so the same tree always resolves the same
   way, `__MACOSX` is skipped, and a folder holding no bundle raises `InvalidInputError` at
-  construction rather than failing later on a missing `Info.plist`. A folder that already ends
-  in a bundle suffix is used as it is, never scanned, so `App("Runner.app")` and
-  `App("Inner.framework")` behave exactly as before.
+  construction rather than failing later on a missing `Info.plist`. A folder that is already a
+  bundle, either because its name ends in a bundle suffix or because it carries its own
+  `Info.plist`, is used as it is, never scanned, so `App("Runner.app")`, `App("Inner.framework")`
+  and a renamed `App("MyApp")` behave exactly as before.
 - **`BundleEdits`** in `ipasign.edit` holds the recorded queue, and `ipasign.edit.apply_edits`
   runs the pass over a bundle root.
 
