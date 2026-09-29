@@ -55,6 +55,15 @@ ipasign.App("Payload/MyApp.app").sign(key)   # signed in place
 ipasign.App("libX.dylib").sign(key)          # signed in place
 ```
 
+A folder that is not itself a bundle is searched for the `.app`/`.appex`
+inside it, so an unzip output can be handed over as it is:
+
+```python
+app = ipasign.App("unzipped")
+print(app.path)   # unzipped/Payload/MyApp.app
+app.sign(key)
+```
+
 `sign()` returns a result object, not a boolean:
 
 | Attribute | Meaning |

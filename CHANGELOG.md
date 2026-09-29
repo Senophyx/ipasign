@@ -58,6 +58,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`App.modify()`** applies the recorded edits without signing, so bundle modification works
   with no credential. An archive is rewritten in place unless `output` names a target; a bundle
   folder is edited where it is. `sign()` applies the same edits and then seals.
+- **Input folder discovery.** A folder that is not itself a bundle is searched for the
+  `.app`/`.appex` inside it, so a hand-unzipped archive can be handed over as it is, without
+  knowing where the bundle landed. `App("unzipped")`, `App("unzipped/Payload")` and
+  `App("unzipped/Payload/Runner.app")` all resolve to the same bundle, and `App.path` reports
+  which one. Candidates are visited in sorted order, so the same tree always resolves the same
+  way, `__MACOSX` is skipped, and a folder holding no bundle raises `InvalidInputError` at
+  construction rather than failing later on a missing `Info.plist`. A folder that already ends
+  in a bundle suffix is used as it is, never scanned, so `App("Runner.app")` and
+  `App("Inner.framework")` behave exactly as before.
 - **`BundleEdits`** in `ipasign.edit` holds the recorded queue, and `ipasign.edit.apply_edits`
   runs the pass over a bundle root.
 
