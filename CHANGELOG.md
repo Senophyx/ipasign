@@ -29,6 +29,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bundle modification.** `App` records edits and applies them in one pass before the seal, so an
+  edited file is always covered by the `CodeResources` that follows it. Each method returns the
+  `App`, so they chain:
+
+  ```python
+  (ipasign.App("input.ipa")
+      .set_bundle_id("com.example.prod")
+      .set_name("ProdApp")
+      .set_version("2.0")
+      .set_icon("icon.png")
+      .set_minimum_os("15.0")
+      .enable_documents()
+      .sign(key))
+  ```
+
+  `set_bundle_id()` rewrites `CFBundleIdentifier` in the root plist and string-replaces the old
+  identifier in every nested `.app`/`.appex` (`CFBundleIdentifier`,
+  `WKCompanionAppBundleIdentifier`, `NSExtension.NSExtensionAttributes.WKAppBundleIdentifier`).
+  `set_name()` writes `CFBundleName`/`CFBundleDisplayName` and the `zh_CN`/`zh-Hans`
+  `InfoPlist.strings` files when present. `set_version()` writes both version keys.
+  `set_icon()` overwrites the bundle-root PNGs the declared icon names cover and drops
+  `CFBundleIconName` so the `Assets.car` icon does not win on iOS 11+. `enable_documents()`,
+  `set_minimum_os()`, `remove_supported_devices()`, `remove_extensions()`, `remove_watch_app()`
+  and `remove_provision()` are independent toggles. Anything that needs a bundle raises on a bare
+  Mach-O at call time, where `set_bundle_id()` sets the identifier sealed into the CodeDirectory
+  instead.
+- **`App.modify()`** applies the recorded edits without signing, so bundle modification works
+  with no credential. An archive is rewritten in place unless `output` names a target; a bundle
+  folder is edited where it is. `sign()` applies the same edits and then seals.
+- **`BundleEdits`** in `ipasign.edit` holds the recorded queue, and `ipasign.edit.apply_edits`
+  runs the pass over a bundle root.
+
 - **`App` facade.** `ipasign.App` accepts anything signable: an `.ipa` archive, an `.app`
   bundle folder, a framework, a dylib or a bare Mach-O executable, and dispatches on what it
   finds. Every call returns a `SignResult`.
