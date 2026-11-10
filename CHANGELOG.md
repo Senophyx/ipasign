@@ -111,6 +111,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An output path for a bundle folder is now always refused on `App.sign()`. Previously the
   folder's own path was accepted, since that is where the bundle is signed anyway, and a bare
   Mach-O already refused one.
+- A `tmp_folder` passed to `App.sign()` or `App.modify()` must now be empty or missing. A
+  folder that already holds files raises `ArchiveError` and is left untouched. Previously it
+  was wiped before unpacking, which could delete the caller's own files.
+- `bundle_id` on `App.sign()` is now refused for a bundle folder and an archive with
+  `InvalidInputError`. It was silently ignored there; use `set_bundle_id()` instead.
+- Signing a FairPlay-encrypted binary now raises `MachOError`. It used to sign cleanly and
+  produce an app that cannot launch.
+- `SignResult.signed_count` now counts files, as documented. A bundle executable is signed
+  twice and a fat binary holds several slices, and both used to inflate the number.
+
+### Removed
+
+- `ProvisioningProfile.get_task_allow`. It was unused, and it read the entitlement more loosely
+  than the signer does. The signer's own rule, true only for a boolean `true`, still applies.
+
+### Fixed
+
+- A `.DS_Store` file below the bundle root is now left out of `files2` in `CodeResources`, as
+  the seal's own rules require. Sealing it made `codesign --verify` report a missing resource.
+- Two runs on the same archive no longer share a scratch folder. Each unpack gets its own, so
+  signing one `.ipa` in parallel, or reading its metadata while it is being signed, no longer
+  fails with a raw `FileExistsError` or `FileNotFoundError`. A failed unpack also cleans up
+  after itself.
 
 ## [1.0] - 2026-09-25
 
