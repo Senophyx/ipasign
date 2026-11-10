@@ -157,6 +157,11 @@ class AppSignTests(unittest.TestCase):
         self.assertTrue((self.root / "one.ipa").is_file())
         self.assertTrue((self.root / "two.ipa").is_file())
 
+    def test_bundle_id_argument_is_refused_for_an_archive(self) -> None:
+        """The archive keeps its id in Info.plist; ignoring the argument would hide that."""
+        with self.assertRaises(InvalidInputError):
+            App(self.ipa).sign(Key(adhoc=True), bundle_id="com.example.other")
+
     def test_a_missing_input_is_caught_by_construction(self) -> None:
         """Validation happens up front, so sign() never sees a bad path."""
         app = App(self.ipa)
@@ -194,6 +199,10 @@ class AppFolderTests(unittest.TestCase):
         """In-place is the only sensible target, so fail loudly."""
         with self.assertRaises(InvalidInputError):
             App(self.bundle).sign(Key(adhoc=True), output=self.root / "out.app")
+
+    def test_bundle_id_argument_is_refused_for_a_folder(self) -> None:
+        with self.assertRaises(InvalidInputError):
+            App(self.bundle).sign(Key(adhoc=True), bundle_id="com.example.other")
 
     def test_the_default_output_still_names_the_folder(self) -> None:
         """Only an archive gets a derived name; the property stays harmless."""

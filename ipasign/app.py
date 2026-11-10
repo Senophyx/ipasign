@@ -263,7 +263,8 @@ class App:
 
         ``bundle_id`` names the identifier to seal for a bare Mach-O, which has
         no bundle to read one from. Bundles keep the identifier in their own
-        ``Info.plist``.
+        ``Info.plist``, so it is refused for a bundle folder and an archive,
+        where :meth:`set_bundle_id` is the way to change it.
 
         ``tmp_folder`` names where an archive is unpacked. It must be empty or
         missing, and it is kept afterwards.
@@ -271,6 +272,11 @@ class App:
         Edits recorded with the ``set_*`` and ``remove_*`` methods are applied
         before the seal, so :meth:`sign` both edits and signs.
         """
+        if bundle_id is not None and (self.path.is_dir() or self.is_archive):
+            raise InvalidInputError(
+                "bundle_id= only applies to a bare Mach-O; use set_bundle_id() for a bundle"
+            )
+
         if self.path.is_dir():
             return self._sign_folder(key, output)
 
