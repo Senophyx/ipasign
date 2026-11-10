@@ -278,13 +278,15 @@ def sign_bundle(
     if edits is not None:
         edit.apply_edits(root, edits)
 
-    signed = 0
-    for path in collect_macho_files(root):
-        signed += sign_macho_file(signer, path)
+    # Every bundle executable is also a Mach-O in this list and is signed twice,
+    # bare here and again with its seal below, so the files are counted once.
+    macho_files = collect_macho_files(root)
+    for path in macho_files:
+        sign_macho_file(signer, path)
 
     for bundle in collect_nested_bundles(root):
         try:
-            signed += sign_bundle_member(signer, bundle)
+            sign_bundle_member(signer, bundle)
         except BundleError:
             # A nested folder that is not really a signable bundle (no
             # Info.plist or no executable) is left alone, like the reference.
@@ -292,10 +294,10 @@ def sign_bundle(
 
     bundle_id, _executable, info = bundle_details(root)
     parsed = parse_info_plist(info)
-    signed += sign_bundle_member(signer, root)
+    sign_bundle_member(signer, root)
     return BundleResult(
         bundle_id=bundle_id,
-        signed_count=signed,
+        signed_count=len(macho_files),
         app_name=display_name(parsed),
         app_version=app_version(parsed),
     )

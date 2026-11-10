@@ -110,7 +110,7 @@ class AppSignTests(unittest.TestCase):
     def test_result_describes_the_bundle(self) -> None:
         result = App(self.ipa).sign(Key(adhoc=True))
         self.assertEqual(result.bundle_id, "com.example.test")
-        self.assertGreaterEqual(result.signed_count, 1)
+        self.assertEqual(result.signed_count, 1, "the executable is one file, signed twice")
         self.assertEqual(result.app_name, "Test")
         self.assertEqual(result.app_version, "1.0")
 
@@ -184,7 +184,7 @@ class AppFolderTests(unittest.TestCase):
         self.assertIsInstance(result, SignResult)
         self.assertEqual(result.output_path, str(self.bundle))
         self.assertEqual(result.bundle_id, "com.example.test")
-        self.assertGreaterEqual(result.signed_count, 1)
+        self.assertEqual(result.signed_count, 1)
 
     def test_the_executable_really_carries_a_signature(self) -> None:
         App(self.bundle).sign(Key(adhoc=True))
@@ -236,6 +236,12 @@ class AppMachoTests(unittest.TestCase):
         self.assertEqual(result.signed_count, 1)
         signed = macho.MachOFile.parse(self.runner.read_bytes())
         self.assertIsNotNone(signed.slices[0].code_signature)
+
+    def test_a_fat_file_counts_as_one_signed_file(self) -> None:
+        fat = self.root / "Fat"
+        fat.write_bytes(fixtures.minimal_fat(fixtures.minimal_macho(), fixtures.minimal_macho()))
+        result = App(fat).sign(Key(adhoc=True))
+        self.assertEqual(result.signed_count, 1, "slices are not files")
 
     def test_bundle_id_falls_back_to_the_file_name(self) -> None:
         result = App(self.runner).sign(Key(adhoc=True))

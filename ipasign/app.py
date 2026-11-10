@@ -413,7 +413,7 @@ class App:
             bundle_id=resolved_id,
             info_plist_hash=embedded_info_plist_hash(slc),
         )
-        count = sign_macho_file(key.signer(), self.path, ctx)
+        sign_macho_file(key.signer(), self.path, ctx)
 
         # A bare Mach-O may still carry an embedded Info.plist, which is the only
         # place its name and version could come from.
@@ -429,7 +429,7 @@ class App:
         return SignResult(
             output_path=str(self.path),
             bundle_id=resolved_id,
-            signed_count=count,
+            signed_count=1,
             app_name=name,
             app_version=version,
         )
