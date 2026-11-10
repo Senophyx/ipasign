@@ -33,18 +33,11 @@ from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.x509.oid import NameOID
 
 from . import blobs, macho
+from .bundle import MACHO_MAGICS
 from .credentials import _embedded_intermediate, _plist_from_cms
 from .errors import CredentialError, InvalidInputError, MachOError
 
 ZIP_MAGIC = b"PK\x03\x04"
-MACHO_MAGICS = (
-    b"\xcf\xfa\xed\xfe",
-    b"\xce\xfa\xed\xfe",
-    b"\xfe\xed\xfa\xce",
-    b"\xfe\xed\xfa\xcf",
-    b"\xca\xfe\xba\xbe",
-    b"\xbe\xba\xfe\xca",
-)
 
 # Extension to reported type, checked before any content sniffing.
 _EXTENSION_TYPES = {

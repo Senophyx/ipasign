@@ -154,11 +154,4 @@ def build_cms(identity: Identity, parts: CmsParts) -> bytes:
     ).dump()
 
 
-def cms_content(cms_bytes: bytes) -> bytes | None:
-    """Return the detached content of a CMS blob, or None when absent."""
-    info = cms.ContentInfo.load(cms_bytes)
-    content = info["content"]["encap_content_info"]["content"]
-    return content.native if content.native else None
-
-
 __all__ = ["CmsParts", "build_cms"]

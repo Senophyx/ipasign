@@ -78,29 +78,6 @@ class ProfileTests(unittest.TestCase):
             "insertion order must survive",
         )
 
-    def test_get_task_allow_reads_the_boolean(self) -> None:
-        false_profile = load_profile(self.write(fixtures.mobileprovision()))
-        self.assertFalse(false_profile.get_task_allow)
-
-        true_profile = load_profile(
-            self.write(
-                fixtures.mobileprovision(
-                    entitlements={"application-identifier": "app", "get-task-allow": True}
-                ),
-                "true.mobileprovision",
-            )
-        )
-        self.assertTrue(true_profile.get_task_allow)
-
-    def test_get_task_allow_absent_is_false(self) -> None:
-        profile = load_profile(
-            self.write(
-                fixtures.mobileprovision(entitlements={"application-identifier": "app"}),
-                "absent.mobileprovision",
-            )
-        )
-        self.assertFalse(profile.get_task_allow)
-
     def test_matches_bundle_id(self) -> None:
         profile = load_profile(self.write(fixtures.mobileprovision()))
         self.assertTrue(profile.matches("com.example.test"))

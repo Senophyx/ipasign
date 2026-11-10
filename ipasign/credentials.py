@@ -31,11 +31,6 @@ class ProvisioningProfile:
     application_id: str
     developer_certificates: list[bytes] = field(default_factory=list)
 
-    @property
-    def get_task_allow(self) -> bool:
-        """True only when ``get-task-allow`` is present and set to a true value."""
-        return bool(self.entitlements.get("get-task-allow", False))
-
     def matches(self, bundle_id: str) -> bool:
         """Whether this profile was issued for ``bundle_id``."""
         return bool(self.application_id) and self.application_id.endswith(bundle_id)

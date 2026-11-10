@@ -43,13 +43,6 @@ from .signer import (
     sign_macho_file,
 )
 
-def _looks_like_macho(path: Path) -> bool:
-    try:
-        with open(path, "rb") as handle:
-            return handle.read(4) in bundle.MACHO_MAGICS
-    except OSError:
-        return False
-
 def _resolve_bundle(source: Path) -> Path:
     """The bundle to work on, descending into ``source`` when it holds one.
 
@@ -85,7 +78,7 @@ class App:
         source = Path(path)
         if not source.exists():
             raise InvalidInputError(f"input does not exist: {source}")
-        if not (source.is_dir() or source.suffix.lower() == ".ipa" or _looks_like_macho(source)):
+        if not (source.is_dir() or source.suffix.lower() == ".ipa" or bundle.is_macho_file(source)):
             raise InvalidInputError(f"do not know how to sign: {source}")
         self.path = _resolve_bundle(source)
         self._edits = edit.BundleEdits()
@@ -283,7 +276,7 @@ class App:
         if self.path.suffix.lower() == ".ipa":
             return self._sign_ipa(key, output, keep_work_dir, tmp_folder)
 
-        if _looks_like_macho(self.path):
+        if bundle.is_macho_file(self.path):
             return self._sign_macho(key, output, bundle_id)
 
         raise InvalidInputError(f"do not know how to sign: {self.path}")
