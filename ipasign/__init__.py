@@ -33,7 +33,7 @@ from .key import Key
 from .metadata import Metadata
 from .result import SignResult
 
-__version__ = "1.0"
+__version__ = "2.0"
 
 __all__ = [
     "App",
