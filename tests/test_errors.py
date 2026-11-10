@@ -32,7 +32,7 @@ class NoRawLeakTests(unittest.TestCase):
                 MachOFile.parse(payload)
             except errors.IpasignError:
                 pass
-            except Exception as exc:  # noqa: BLE001 - the point of the test
+            except Exception as exc:  # catching everything is the point of the test
                 self.fail(f"leaked {type(exc).__name__} for {payload!r}")
 
     def test_bad_entitlements_wrap_into_blob_error(self) -> None:

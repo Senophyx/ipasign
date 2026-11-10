@@ -19,7 +19,7 @@ PROJECT_ROOT = TESTS_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from tests import fixtures  # noqa: E402 - path must be set up first
+from tests import fixtures  # path must be set up first
 
 
 def main() -> int:
