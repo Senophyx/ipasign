@@ -78,6 +78,14 @@ class UnpackTests(unittest.TestCase):
         archive.unpack(self.ipa, target)
         self.assertFalse((target / "stale.txt").exists(), "the directory is wiped first")
 
+    def test_default_scratch_is_unique_per_run(self) -> None:
+        """Two runs on one archive must not share, and so wipe, each other's folder."""
+        first = archive.unpack(self.ipa)
+        second = archive.unpack(self.ipa)
+        self.assertNotEqual(first.root, second.root)
+        self.assertTrue((first.app / "Info.plist").is_file())
+        self.assertTrue((second.app / "Info.plist").is_file())
+
     def test_missing_archive_raises(self) -> None:
         with self.assertRaises(ArchiveError):
             archive.unpack(self.root / "nope.ipa", self.root / "work")

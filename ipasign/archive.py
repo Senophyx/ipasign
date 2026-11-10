@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import shutil
 import stat
+import uuid
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,19 +62,26 @@ def find_app(root: Path) -> Path:
 
 
 def unpack(ipa_path: Path, work_dir: Path | None = None) -> Unpacked:
-    """Extract an ``.ipa`` into ``work_dir`` and locate the app bundle."""
+    """Extract an ``.ipa`` into ``work_dir`` and locate the app bundle.
+
+    With no ``work_dir`` a fresh folder under ``.ipasign_tmp`` is used, named
+    uniquely per run so two runs on the same archive never share one.
+    """
     ipa_path = Path(ipa_path)
     if not ipa_path.is_file():
         raise ArchiveError(f"archive not found: {ipa_path}")
 
     if work_dir is None:
-        root = scratch_root(ipa_path) / ipa_path.stem
+        root = scratch_root(ipa_path) / f"{ipa_path.stem}-{uuid.uuid4().hex[:8]}"
     else:
         root = Path(work_dir)
+        if root.exists():
+            shutil.rmtree(root)
 
-    if root.exists():
-        shutil.rmtree(root)
-    root.mkdir(parents=True, exist_ok=True)
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ArchiveError(f"cannot create work directory {root}: {exc}") from exc
 
     try:
         with zipfile.ZipFile(ipa_path) as archive:
@@ -82,14 +90,15 @@ def unpack(ipa_path: Path, work_dir: Path | None = None) -> Unpacked:
                     raise ArchiveError(f"archive holds an unsafe path: {info.filename}")
                 archive.extract(info, root)
                 _restore_mode(root / info.filename, info)
+        app = find_app(root)
     except zipfile.BadZipFile as exc:
-        shutil.rmtree(root, ignore_errors=True)
+        cleanup(root)
         raise ArchiveError(f"{ipa_path} is not a zip archive: {exc}") from exc
     except Exception:
-        shutil.rmtree(root, ignore_errors=True)
+        cleanup(root)
         raise
 
-    return Unpacked(root=root, payload=root / "Payload", app=find_app(root))
+    return Unpacked(root=root, payload=root / "Payload", app=app)
 
 
 def _restore_mode(path: Path, info: zipfile.ZipInfo) -> None:
