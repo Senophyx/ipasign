@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   The signed bytes are unchanged: the same input produces a byte-identical archive through
   either path.
+- **`output_path` is now `output`.** The input moved to `App(path)`, and the target is passed to
+  `App.sign()` as `output`. A 1.0 call written as `key.sign(input_path=..., output_path=...)`
+  has to be rewritten, not only moved. `keep_work_dir`, `tmp_folder` and `bundle_id` keep their
+  names.
 
 ### Added
 
