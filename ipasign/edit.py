@@ -113,9 +113,9 @@ def _touches_plist(edits: BundleEdits) -> bool:
 def _apply_plist_edits(root: Path, info: dict, edits: BundleEdits) -> None:
     """Mutate ``info`` in place with every recorded plist edit.
 
-    The order is the reference's: toggles, then the icon, then the identity
-    keys. New keys are appended in insertion order, so the order decides where
-    they land in the written plist.
+    The order is toggles, then the icon, then the identity keys. New keys are
+    appended in insertion order, so the order decides where they land in the
+    written plist.
     """
     if edits.documents:
         info["UISupportsDocumentBrowser"] = True
@@ -159,8 +159,8 @@ def _drop_folders(root: Path, names: tuple[str, ...]) -> None:
 def _drop_provision(root: Path) -> None:
     """Delete every embedded profile in the tree, root and nested bundles.
 
-    The reference drops each one while it builds that bundle's seal; doing it
-    here is the same point in the order, since the seal comes after this pass.
+    This pass runs before any seal is built, so no dropped profile ends up in
+    ``CodeResources``.
     """
     for path in root.rglob(PROVISION_FILE):
         try:
@@ -173,8 +173,8 @@ def _drop_provision(root: Path) -> None:
 def _rename_plugins(root: Path, old_id: str, new_id: str) -> None:
     """Carry a bundle id change into every nested ``.app`` and ``.appex``.
 
-    Only those two kinds are touched, matching the reference: a framework or an
-    ``.xctest`` carries no identifier of its own. A plugin whose plist cannot be
+    Only those two kinds are touched: a framework or an ``.xctest`` carries no
+    identifier of its own. A plugin whose plist cannot be
     read is left alone rather than failing the whole run, and one that carries
     none of the three keys keeps its bytes exactly as they were.
     """

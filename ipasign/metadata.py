@@ -140,9 +140,8 @@ def _chosen_icon(app_folder: Path, names: list[str]) -> tuple[Path, bytes] | Non
 def _icon_file_name(icon: Path) -> str:
     """The name the icon is written under.
 
-    The reference hashes the icon's absolute path, which points into a
-    temporary unpack directory and so changes on every run. Hashing the file
-    name instead keeps the sidecar reproducible.
+    The file name is hashed, not the absolute path: the path points into a
+    temporary unpack folder, so it would give a different name on every run.
     """
     return hashlib.sha1(icon.name.encode("utf-8")).hexdigest() + ".png"
 

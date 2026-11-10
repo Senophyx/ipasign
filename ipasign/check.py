@@ -106,10 +106,9 @@ class CertCheckResult:
     """The whole report: what was checked, the certificate and its OCSP status.
 
     ``signed`` is ``True``/``False`` for an archive or a Mach-O, and ``None``
-    for a credential file where the question does not apply. ``code`` keeps the
-    reference's numeric outcome (``0`` valid, ``1`` revoked, ``2`` expired,
-    ``-2`` not signed, ``-1`` error) and ``status`` is the same thing as a
-    stable string.
+    for a credential file where the question does not apply. ``code`` is the
+    numeric outcome (``0`` valid, ``1`` revoked, ``2`` expired, ``-2`` not
+    signed, ``-1`` error) and ``status`` is the same thing as a stable string.
     """
 
     path: str

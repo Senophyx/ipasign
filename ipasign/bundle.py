@@ -288,8 +288,7 @@ def sign_bundle(
         try:
             sign_bundle_member(signer, bundle)
         except BundleError:
-            # A nested folder that is not really a signable bundle (no
-            # Info.plist or no executable) is left alone, like the reference.
+            # Not a signable bundle (no Info.plist or no executable), so it is left unsigned.
             continue
 
     bundle_id, _executable, info = bundle_details(root)
