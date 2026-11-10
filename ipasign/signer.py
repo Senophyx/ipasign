@@ -201,6 +201,9 @@ def sign_file_data(signer: Signer, data: bytes, ctx: FileContext) -> tuple[bytes
     fat container is rebuilt with every slice aligned.
     """
     parsed = macho.MachOFile.parse(data)
+    if any(slc.encrypted for slc in parsed.slices):
+        # A FairPlay-encrypted binary signs cleanly but can never run re-signed.
+        raise MachOError("the binary is encrypted (cryptid set); decrypt it before signing")
 
     if not any(_needs_growth(slc, signer, ctx) for slc in parsed.slices):
         out = bytearray(data)

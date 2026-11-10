@@ -104,6 +104,16 @@ class AdhocSignTests(unittest.TestCase):
         signed, _ = sign_file_data(Signer(adhoc=True), source, ctx)
         return signed, entries_of(superblob_of(signed))
 
+    def test_an_encrypted_binary_is_refused(self) -> None:
+        """A FairPlay-encrypted binary would sign cleanly and then never launch."""
+        data = bytearray(fixtures.minimal_macho())
+        command_end = fixtures.HEADER_SIZE + fixtures.SIZEOFCMDS
+        # LC_ENCRYPTION_INFO_64: cmd, cmdsize, cryptoff, cryptsize, cryptid, pad
+        struct.pack_into("<6I", data, command_end, 0x2C, 24, 0, 0, 1, 0)
+        struct.pack_into("<II", data, 16, 3, fixtures.SIZEOFCMDS + 24)
+        with self.assertRaises(MachOError):
+            self.sign(bytes(data))
+
     def test_slice_grows_and_gets_a_signature_command(self) -> None:
         signed, _ = self.sign()
         parsed = macho.MachOFile.parse(signed)
