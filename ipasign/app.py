@@ -305,8 +305,7 @@ class App:
             finally:
                 archive.cleanup(unpacked.root)
 
-        # A bare Mach-O has no bundle root, so the only place its name and
-        # version could come from is the plist embedded in the file itself.
+        # A bare Mach-O has no bundle root, so only its embedded plist can name it.
         slc = macho.MachOFile.parse(self.path.read_bytes()).slices[0]
         info = bundle.parse_info_plist(slc.info_plist) if slc.info_plist else {}
         return self._metadata_for(info, None, save_to)
@@ -408,8 +407,7 @@ class App:
         )
         sign_macho_file(key.signer(), self.path, ctx)
 
-        # A bare Mach-O may still carry an embedded Info.plist, which is the only
-        # place its name and version could come from.
+        # Only an embedded Info.plist can give a bare Mach-O a name and version.
         name = version = ""
         if slc.info_plist:
             try:

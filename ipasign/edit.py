@@ -45,7 +45,6 @@ class BundleEdits:
     name: str | None = None
     version: str | None = None
 
-    # Icon replacement.
     icon: Path | None = None
 
     # Independent toggles.

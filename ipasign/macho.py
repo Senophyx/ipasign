@@ -22,9 +22,8 @@ MH_CIGAM = 0xCEFAEDFE
 MH_MAGIC_64 = 0xFEEDFACF
 MH_CIGAM_64 = 0xCFFAEDFE
 
-# Fat headers are detected on their raw bytes. The canonical order
-# ``ca fe ba be`` stores its fields big-endian; the byte-swapped form stores
-# them little-endian. Getting this backwards rejects real Apple frameworks.
+# ``ca fe ba be`` stores the fat fields big-endian, the byte-swapped form little-endian.
+# Mixing the two up rejects real Apple frameworks.
 FAT_MAGIC_BYTES = b"\xca\xfe\xba\xbe"
 FAT_CIGAM_BYTES = b"\xbe\xba\xfe\xca"
 

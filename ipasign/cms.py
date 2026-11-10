@@ -27,9 +27,8 @@ from .errors import BlobError
 OID_APPLE_CDHASHES_PLIST = "1.2.840.113635.100.9.1"
 OID_APPLE_CDHASHES = "1.2.840.113635.100.9.2"
 
-# Content bytes of OID 2.16.840.1.101.3.4.2.1 (sha256). The wrapping SEQUENCE
-# carries no parameters: adding a NULL there changes the bytes and breaks
-# parity with Apple's own output.
+# Content bytes of OID 2.16.840.1.101.3.4.2.1 (sha256), sent without parameters:
+# a NULL there changes the bytes and breaks parity with Apple's own output.
 _SHA256_OID_CONTENT = bytes.fromhex("608648016503040201")
 
 

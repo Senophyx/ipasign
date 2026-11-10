@@ -133,10 +133,7 @@ class CertCheckResult:
     def __str__(self) -> str:
         return self.to_json()
 
-    # Convenience access to the certificate fields, so a caller can read
-    # ``result.expires`` without going through ``result.certificate``. The
-    # certificate's own ``type`` is not forwarded: ``result.type`` already names
-    # the file kind, which is what a caller reads there.
+    # ``type`` is not forwarded: ``result.type`` already names the file kind.
 
     @property
     def name(self) -> str | None:
