@@ -71,12 +71,20 @@ class UnpackTests(unittest.TestCase):
         mode = (unpacked.app / "Test").stat().st_mode
         self.assertTrue(mode & 0o111, "the executable bit must survive the round trip")
 
-    def test_reuses_clean_directory(self) -> None:
+    def test_refuses_a_non_empty_work_directory(self) -> None:
+        """A caller-named folder may hold the caller's files, so it is never wiped."""
         target = self.root / "work"
         target.mkdir()
-        (target / "stale.txt").write_text("left over")
-        archive.unpack(self.ipa, target)
-        self.assertFalse((target / "stale.txt").exists(), "the directory is wiped first")
+        (target / "mine.txt").write_text("keep me")
+        with self.assertRaises(ArchiveError):
+            archive.unpack(self.ipa, target)
+        self.assertEqual((target / "mine.txt").read_text(), "keep me")
+
+    def test_accepts_an_empty_work_directory(self) -> None:
+        target = self.root / "work"
+        target.mkdir()
+        unpacked = archive.unpack(self.ipa, target)
+        self.assertEqual(unpacked.root, target)
 
     def test_default_scratch_is_unique_per_run(self) -> None:
         """Two runs on one archive must not share, and so wipe, each other's folder."""

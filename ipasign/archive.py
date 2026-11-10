@@ -65,7 +65,9 @@ def unpack(ipa_path: Path, work_dir: Path | None = None) -> Unpacked:
     """Extract an ``.ipa`` into ``work_dir`` and locate the app bundle.
 
     With no ``work_dir`` a fresh folder under ``.ipasign_tmp`` is used, named
-    uniquely per run so two runs on the same archive never share one.
+    uniquely per run so two runs on the same archive never share one. A
+    ``work_dir`` the caller names must be empty or missing: it is never wiped,
+    because it may hold the caller's own files.
     """
     ipa_path = Path(ipa_path)
     if not ipa_path.is_file():
@@ -75,8 +77,8 @@ def unpack(ipa_path: Path, work_dir: Path | None = None) -> Unpacked:
         root = scratch_root(ipa_path) / f"{ipa_path.stem}-{uuid.uuid4().hex[:8]}"
     else:
         root = Path(work_dir)
-        if root.exists():
-            shutil.rmtree(root)
+        if root.exists() and (not root.is_dir() or any(root.iterdir())):
+            raise ArchiveError(f"work directory is not empty, refusing to overwrite it: {root}")
 
     try:
         root.mkdir(parents=True, exist_ok=True)

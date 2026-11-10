@@ -265,6 +265,9 @@ class App:
         no bundle to read one from. Bundles keep the identifier in their own
         ``Info.plist``.
 
+        ``tmp_folder`` names where an archive is unpacked. It must be empty or
+        missing, and it is kept afterwards.
+
         Edits recorded with the ``set_*`` and ``remove_*`` methods are applied
         before the seal, so :meth:`sign` both edits and signs.
         """
