@@ -182,7 +182,10 @@ def generate_code_resources(bundle: Path, executable: str) -> bytes:
         sha1, sha256 = _file_digests(bundle / key)
 
         omit_files = key.endswith(".lproj/locversion.plist")
-        omit_files2 = omit_files or key == ".DS_Store" or key == "Info.plist" or key == "PkgInfo"
+        # rules2 omits .DS_Store at any depth (^(.*/)?\.DS_Store$); sealing a nested one
+        # makes the verifier report it as a missing resource.
+        is_ds_store = key.rsplit("/", 1)[-1] == ".DS_Store"
+        omit_files2 = omit_files or is_ds_store or key == "Info.plist" or key == "PkgInfo"
 
         if not omit_files:
             if _is_lproj(key):

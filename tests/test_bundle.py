@@ -142,6 +142,15 @@ class CodeResourcesTests(unittest.TestCase):
         self.assertNotIn("Info.plist", parsed["files2"], "omitted from files2")
         self.assertNotIn("PkgInfo", parsed["files2"])
 
+    def test_ds_store_is_omitted_from_files2_at_any_depth(self) -> None:
+        nested = self.root / "Frameworks"
+        nested.mkdir()
+        (nested / ".DS_Store").write_bytes(b"junk")
+        (self.root / ".DS_Store").write_bytes(b"junk")
+        parsed = plistlib.loads(bundle.generate_code_resources(self.root, "Test"))
+        self.assertNotIn(".DS_Store", parsed["files2"])
+        self.assertNotIn("Frameworks/.DS_Store", parsed["files2"])
+
     def test_lproj_entries_are_marked_optional(self) -> None:
         lproj = self.root / "Base.lproj"
         lproj.mkdir()
