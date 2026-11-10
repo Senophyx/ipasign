@@ -40,9 +40,21 @@ key = ipasign.Key("identity.p12", "profile.mobileprovision", "password")
 out = ipasign.App("input.ipa").sign(key, output="output.ipa")
 ```
 
-The signed bytes are unchanged. The rest of the 1.0 surface still works as it
-did, apart from `output` for a bundle folder, which is now always refused
-because a folder is signed in place.
+`output_path` is now `output`. The other keyword arguments carry over to
+`App.sign()`, with a few behaviour changes:
+
+- `output` for a bundle folder is always refused, because a folder is signed in
+  place.
+- `tmp_folder` must be empty or missing. A folder that already holds files raises
+  `ArchiveError` instead of being wiped.
+- `bundle_id` only applies to a bare Mach-O. For an archive or a bundle folder it
+  raises `InvalidInputError` instead of being ignored; use `set_bundle_id()`.
+- `signed_count` counts Mach-O files, so it can be lower than 1.0 reported.
+- An encrypted (FairPlay) binary raises `MachOError` instead of being signed.
+
+Signatures are otherwise produced the same way. See the
+[changelog](https://github.com/Senophyx/ipasign/blob/main/CHANGELOG.md) for the
+full list, including the fixes.
 
 ## Quick Example
 
